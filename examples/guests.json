@@ -1,0 +1,14 @@
+{
+  "guests": [
+    {"vmid": 100, "name": "web1", "status": "running", "shutdown_secs": 30,
+     "config": {"boot": "order=scsi0;net0", "scsi0": "local-lvm:vm-100-disk-0,size=8G",
+                "net0": "virtio=BC:24:11:00:01:00,bridge=vmbr0", "serial0": "socket"}},
+    {"vmid": 101, "name": "db1", "status": "stopped",
+     "config": {"boot": "order=scsi0;ide2;net0", "scsi0": "local-lvm:vm-101-disk-0,size=16G",
+                "ide2": "none,media=cdrom", "net0": "virtio=BC:24:11:00:01:01,bridge=vmbr0"}},
+    {"vmid": 102, "name": "paused1", "status": "running", "qmpstatus": "paused",
+     "config": {"scsi0": "local-lvm:vm-102-disk-0,size=8G"}},
+    {"vmid": 9000, "name": "tmpl", "status": "stopped", "template": true,
+     "config": {"scsi0": "local-lvm:base-9000-disk-0,size=8G"}}
+  ]
+}

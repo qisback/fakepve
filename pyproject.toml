@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fakepve"
+version = "0.1.0"
+description = "A lightweight fake Proxmox VE API for testing Proxmox clients"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "Apache-2.0"}
+dependencies = ["aiohttp>=3.8"]
+
+[project.optional-dependencies]
+# Self-signed certificates and VNC authentication.
+crypto = ["cryptography>=36"]
+test = ["cryptography>=36", "pytest", "pytest-asyncio"]
+
+[project.scripts]
+fakepve = "fakepve.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B"]
