@@ -23,6 +23,7 @@ import urllib.parse
 import aiohttp
 from aiohttp import web
 
+from .generic import GenericApi
 from .model import FakeVm, Model, PveError, TaskError
 
 PORT = 8006  # PVE's API port; clients often assume it
@@ -30,6 +31,7 @@ _hostseq = itertools.count(2)
 API = '/api2/json'
 # Where the authenticated user is kept on the request.
 USER = web.RequestKey('user', str) if hasattr(web, 'RequestKey') else 'user'
+GENERIC = web.RequestKey('generic', object) if hasattr(web, 'RequestKey') else 'generic'
 
 __all__ = ['PORT', 'FakePve', 'FakeVm', 'next_loopback', 'settle']
 
@@ -61,7 +63,7 @@ async def params(request):
     return out
 
 
-class FakePve(Model):
+class FakePve(GenericApi, Model):
     def __init__(self, user='root@pam', password='secret', host=None, port=PORT):
         super().__init__(user, password)
         self.host = host or next_loopback()
@@ -110,6 +112,8 @@ class FakePve(Model):
         r.add_get(qemu + '/agent/{command}', self._agent)
         r.add_post(qemu + '/agent/{command}', self._agent)
         r.add_post(qemu + '/monitor', self._monitor)
+        # Last, so the routes above keep priority: the rest of the schema.
+        r.add_route('*', API + '/{tail:.*}', self._generic)
         self.runner = web.AppRunner(app)
         await self.runner.setup()
         await web.TCPSite(self.runner, self.host, self.port, ssl_context=ctx).start()
@@ -126,7 +130,8 @@ class FakePve(Model):
         body = await request.read()
         self.requests.append((request.method, request.path, body))
         net = self.network
-        path_node = request.match_info.get('node')
+        generic = request[GENERIC] = self.resolve(request, API) if 'tail' in request.match_info else None
+        path_node = request.match_info.get('node') or (generic and generic.params.get('node'))
         delay = net['latency'] + self._random.uniform(0, net['jitter']) + net['node_latency'].get(path_node, 0)
         await self.pause(delay)
         if net['drop_rate'] and self._random.random() < net['drop_rate']:
@@ -140,7 +145,13 @@ class FakePve(Model):
                     return web.Response(status=status, text=message, content_type='text/html')
                 return error(status, message)
         try:
-            request[USER] = self._authenticate(request)
+            try:
+                request[USER] = self._authenticate(request)
+            except PveError:
+                # Some generic endpoints (realm list, ...) need no login.
+                if not (generic and self.is_world(generic, request.method)):
+                    raise
+                request[USER] = None
             if path_node and path_node in self.nodes and not self.nodes[path_node].get('online', True):
                 raise PveError(595, 'No route to host')
             return await handler(request)
@@ -163,6 +174,10 @@ class FakePve(Model):
         if request.method not in ('GET', 'HEAD') and request.headers.get('CSRFPreventionToken') != session['csrf']:
             raise PveError(401, 'Permission denied - invalid csrf token')
         return session['user']
+
+    async def _generic(self, request):
+        data = await self.answer(request, request[GENERIC], await params(request), request[USER])
+        return ok(data)
 
     # --------------------------------------------------------------- access
 
