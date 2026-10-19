@@ -125,7 +125,7 @@ def tokenize(src):
         c = src[i]
         if c == '\n':
             i += 1
-            for tok, tag, indent, interp in pending:
+            for tok, tag, indent, _ in pending:
                 lines = []
                 while i < n:
                     e = src.find('\n', i)
@@ -345,9 +345,11 @@ class SrcFile(object):
                 pkg = toks[i + 1].val
                 self.packages.append(pkg)
             elif v == 'sub' and self.tv(i + 2) == '{' and toks[i + 1].kind == 'ident':
-                self.subs[(pkg, toks[i + 1].val)] = Func(self, i + 2, self.match.get(i + 2, i + 2), toks[i + 1].val, pkg)
+                body = Func(self, i + 2, self.match.get(i + 2, i + 2), toks[i + 1].val, pkg)
+                self.subs[(pkg, toks[i + 1].val)] = body
             elif v == 'sub' and self.tv(i + 1) == '{' and self.tv(i - 1) == '=' and toks[i - 2].kind == 'var':
-                self.locals[toks[i - 2].val].append(Func(self, i + 1, self.match.get(i + 1, i + 1), toks[i - 2].val, pkg))
+                body = Func(self, i + 1, self.match.get(i + 1, i + 1), toks[i - 2].val, pkg)
+                self.locals[toks[i - 2].val].append(body)
             elif v == 'register_method' and self.tv(i + 1) == '(' and self.tv(i + 2) == '{':
                 self.methods.append((i + 2, self.match.get(i + 2, i + 2), pkg))
             elif v in ('base', 'parent') and self.tv(i - 1) == 'use':
@@ -571,7 +573,6 @@ class Renderer(object):
         return '{value}'
 
     def sprintf(self, lo, hi):
-        sf = self.sf
         items = self.parts_comma(lo, hi)
         if not items:
             return '{value}'
@@ -686,7 +687,8 @@ def scan(index, fn):
                 elif toks[j].kind == 'var' and toks[j].val in sf.locals:
                     w = sf.local(toks[j].val, fn)
                     workers.append((w.lo, w.hi))
-                elif toks[j].val == '\\' and sf.tv(j + 1) and toks[j + 1].kind == 'var' and toks[j + 1].val.startswith('&'):
+                elif toks[j].val == '\\' and sf.tv(j + 1) and toks[j + 1].kind == 'var' and \
+                        toks[j + 1].val.startswith('&'):
                     w = index.find(fn.pkg, toks[j + 1].val[1:])
                     if w and w.sf is sf:
                         workers.append((w.lo, w.hi))
@@ -782,7 +784,8 @@ def scan(index, fn):
             callee = index.find(fn.pkg, t.val[1:])
             if callee is not None and callee is not fn:
                 out.calls.append((callee, in_worker(i)))
-        elif t.kind == 'cast' and t.val == '&' and sf.tv(i + 1) and toks[i + 1].kind == 'var' and toks[i + 1].val in sf.locals:
+        elif t.kind == 'cast' and t.val == '&' and sf.tv(i + 1) and toks[i + 1].kind == 'var' and \
+                toks[i + 1].val in sf.locals:
             w = sf.local(toks[i + 1].val, fn)
             if not (fn.lo <= w.lo and w.hi <= fn.hi) and w is not fn:
                 out.calls.append((w, in_worker(i)))
@@ -969,7 +972,8 @@ def build(root, schema_path, out_path):
             elif sf.toks[a].kind == 'var' and sf.toks[a].val in sf.locals:
                 fn = sf.local(sf.toks[a].val, Func(sf, a, a, '', pkg))
             else:
-                unmapped.append('{0} {1} ({2}:{3}) code is not an inline sub'.format(method, rel, sf.ref, sf.toks[a].line))
+                unmapped.append('{0} {1} ({2}:{3}) code is not an inline sub'.format(
+                    method, rel, sf.ref, sf.toks[a].line))
                 continue
             full = [p for p in (norm(pre + '/' + rel) for pre in prefixes(mnt, derived, pkg))
                     if p in schema and method in schema[p]]
@@ -979,7 +983,8 @@ def build(root, schema_path, out_path):
                 narrowed = [p for p in cands if p.endswith(tail)] if rel else cands
                 full = narrowed or (cands if len(cands) == 1 else [])
             if not full:
-                unmapped.append('{0} {1} {2} ({3}:{4})'.format(method, rel, name, sf.ref, sf.toks[pairs['method'][0]].line))
+                unmapped.append('{0} {1} {2} ({3}:{4})'.format(
+                    method, rel, name, sf.ref, sf.toks[pairs['method'][0]].line))
                 continue
             errors = method_errors(index, fn)
             if not errors:

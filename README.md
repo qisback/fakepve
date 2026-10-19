@@ -100,7 +100,9 @@ All state is plain and inspectable: `vm.config`, `vm.pending`, `vm.status` / `vm
 | `pve.apitokens['user@pve!id'] = secret` | API token logins |
 | `pve.ticket_ttl` | ticket lifetime (PVE: 2 hours); expired tickets get 401 |
 | `pve.tfa = True` | logins need two-factor authentication |
-| `pve.fail(method, path_suffix, status, message, html=False)` | any request answered with an error, or a non-JSON proxy page |
+| `pve.fail(method, path_suffix, status, message, html=False, times=None)` | any request answered with an error, or a non-JSON proxy page; `times=1` fails one request only |
+| `pve.fail(method, path, error='name', times=None)` | the request fails as PVE would, by [error name](#the-error-catalogue) |
+| `pve.errors_for(method, path)` | the errors that method can return at that path |
 
 ## API behaviour
 
@@ -124,6 +126,37 @@ Everything else is answered from the schema and keeps no state: a write succeeds
 - record the request in `pve.requests`.
 
 Paths not in the schema get 404, and a method the schema does not have on a known path gets 501. A node name the model does not know gets 500 `hostname lookup ... failed`.
+
+### The error catalogue
+
+`data/pve-errors.json.gz` holds the errors PVE can return, per method, taken from the PVE sources: 2314 errors on 465 of the 680 methods (658 are mapped to a source method; the rest, such as the QEMU guest agent commands, are built in a loop and have none). Only message strings, status codes and source references are kept. Each entry has a `name`, `status`, `message` (a template), `errors` (per-field, for 400), `in_task` and `source` (`repo/path:line`). A few errors that apply to many methods are added in code: `invalid_ticket`, `authentication_failure`, `invalid_csrf` and `no_quorum` (writes), `config_lock_timeout` (guest writes), `not_implemented`, `no_route_to_host` and `hostname_lookup_failed` (paths with a node), `permission_denied`.
+
+```python
+pve.errors_for('POST', '/nodes/pve1/qemu/100/status/start')
+# [{'name': 'already_running', 'status': 500, 'message': 'VM 100 already running', 'in_task': True, ...}, ...]
+
+pve.fail('POST', '/nodes/pve1/qemu/100/status/start', error='already_running')   # every start fails
+pve.fail('DELETE', '/nodes/pve1/qemu/100', error='running_destroy_failed', times=1)   # the next one only
+pve.fail('POST', '/nodes/{node}/qemu/{vmid}/status/stop', error='no_quorum')   # a schema path matches any node and VM
+```
+
+- `error=` takes a name from `errors_for`. A name the method does not have raises `ValueError` listing the ones it does, when the path is complete (starts with `/`); a partial suffix is checked on the request. `error=` cannot be combined with `status` and `message`.
+- `{vmid}`, `{node}` and the other placeholders are filled from the request path and body; any others get a plausible value (`{lock}` is `backup`, `{guest_type}` is `VM` or `CT`).
+- A failure is persistent unless `times=n` is given, as with `status` and `message`. It works for hand-written and generic routes alike, and is answered before login, as `fail` always was (except `in_task`).
+- `in_task` errors are raised in a PVE worker. The request succeeds with a UPID, and the task ends with `exitstatus` set to the message and a log ending `TASK ERROR: <message>`.
+- Messages come without PVE's trailing newline; the JSON `message` has it. PVE appends ` at /usr/share/perl5/... line N.` to a `die` with no newline, which is left out.
+
+The extraction is an approximation: it reads the code, it does not run it. Errors in functions the method calls are followed two levels deep, so a few belong to a branch the request would not take. Messages built at run time are templates with the variable's name.
+
+### Regenerating the error catalogue
+
+On a machine with shallow clones of `pve-manager`, `qemu-server`, `pve-container`, `pve-storage`, `pve-access-control`, `pve-cluster`, `pve-firewall`, `pve-network`, `pve-guest-common`, `pve-common`, `pve-ha-manager` and `proxmox-acme` (from `https://git.proxmox.com/git/<name>.git`) in one directory:
+
+```
+python3 tools/extract_errors.py /path/to/clones
+```
+
+It reads the vendored schema, writes `src/fakepve/data/pve-errors.json.gz` (the repositories' commits and the date are in its `meta`), and prints the counts and the source methods it could not map. Python 3 standard library only. The PVE sources are AGPL: nothing but messages and status codes is copied.
 
 ### Refreshing the schema
 
