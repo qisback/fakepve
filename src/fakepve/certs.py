@@ -24,7 +24,9 @@ def make_cert(directory, name='fakepve'):
     keyfile = os.path.join(directory, name + '.key')
     with open(certfile, 'wb') as out:
         out.write(cert.public_bytes(serialization.Encoding.PEM))
-    with open(keyfile, 'wb') as out:
+    # The key is for this process only: owner read/write, whatever the umask.
+    with os.fdopen(os.open(keyfile, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'wb') as out:
+        os.chmod(keyfile, 0o600)
         out.write(key.private_bytes(
             serialization.Encoding.PEM,
             serialization.PrivateFormat.TraditionalOpenSSL,
