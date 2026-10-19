@@ -109,7 +109,18 @@ def _is_number(val):
         return False
 
 
+# Longest value matched against a schema pattern; longer ones fail as PVE's own length limits would.
+MAX_PATTERN_VALUE = 1024
+# Constructs of the PVE schema that make Python's backtracking matcher exponential, with equivalent
+# linear forms. `[-]*` may match nothing, so the separator in (sep [a-z\d]+)* let a run of letters
+# split in any number of ways; requiring at least one dash accepts the same strings.
+LINEAR_FORMS = (('(?:[._]|__|[-]*)', '(?:[._]|__|[-]+)'),)
+
+
+@functools.lru_cache(maxsize=None)
 def _pattern(pattern):
+    for slow, linear in LINEAR_FORMS:
+        pattern = pattern.replace(slow, linear)
     try:
         return re.compile('^(?:' + pattern + ')$', re.S)
     except re.error:
@@ -167,7 +178,7 @@ def check_value(sch, val):
             return val, 'value may only be {0} characters long'.format(sch['maxLength'])
         if sch.get('pattern'):
             rx = _pattern(sch['pattern'])
-            if rx is not None and not rx.match(val):
+            if rx is not None and (len(val) > MAX_PATTERN_VALUE or not rx.match(val)):
                 return val, 'value does not match the regex pattern'
     return val, None
 
@@ -332,7 +343,7 @@ def sample(sch, name='', ctx=None):
         val = _fit(sch, _string(sch, name, ctx))
         if sch.get('pattern'):
             rx = _pattern(sch['pattern'])
-            if rx is not None and not rx.match(val):
+            if rx is not None and (len(val) > MAX_PATTERN_VALUE or not rx.match(val)):
                 guess = _regex_sample(sch['pattern'])
                 if guess is not None:
                     val = _fit(sch, guess)
