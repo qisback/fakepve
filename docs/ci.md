@@ -10,16 +10,16 @@ Contents: [three ways to run it](#three-ways-to-run-it) | [pytest](#pytest) | [a
 |---|---|---|---|
 | Best for | Python tests, any client library you can call from Python | Anything that is not Python: Terraform, Ansible, Go, shell, a CLI | A pipeline that already uses service containers |
 | How | `FakePve` in a fixture | `python -m fakepve` and wait for it | `docker run` or a service |
-| Scenarios (locks, quorum, failures, ...) | All of them, set from the test | Only what the [command line](cli.md) sets, or a script like [`custom_server.py`](../examples/custom_server.py) | The same as a process |
+| Scenarios (locks, quorum, failures, ...) | All of them, set from the test | Only what the [command line](cli.md) sets, or a script like [`custom_server.py`](https://github.com/qisback/fakepve/blob/main/examples/custom_server.py) | The same as a process |
 | Start-up wait | None | Wait for the "listening" line or poll | Health check or poll |
 
-If your client is not written in Python but you want the scenarios, write a small server script (as [`examples/custom_server.py`](../examples/custom_server.py) does), run it as a background process, and give it your tests' setup.
+If your client is not written in Python but you want the scenarios, write a small server script (as [`examples/custom_server.py`](https://github.com/qisback/fakepve/blob/main/examples/custom_server.py) does), run it as a background process, and give it your tests' setup.
 
 ## pytest
 
 ### Async client (aiohttp, httpx)
 
-The fake runs in the test's own event loop, so there is nothing to wait for. [`examples/aiohttp_pytest.py`](../examples/aiohttp_pytest.py) is a complete file; the core is two fixtures:
+The fake runs in the test's own event loop, so there is nothing to wait for. [`examples/aiohttp_pytest.py`](https://github.com/qisback/fakepve/blob/main/examples/aiohttp_pytest.py) is a complete file; the core is two fixtures:
 
 ```python
 import pytest
@@ -49,7 +49,7 @@ Within one process every fake gets its own loopback address, so any number of th
 
 ### Sync client (requests, proxmoxer, the proxmoxer-based Ansible modules)
 
-A synchronous client blocks the thread it runs in, so the fake needs a thread of its own. [`examples/requests_pytest.py`](../examples/requests_pytest.py) and [`examples/proxmoxer_pytest.py`](../examples/proxmoxer_pytest.py) show it. The idea is a loop in a background thread, and `run_coroutine_threadsafe` for the few calls that are coroutines:
+A synchronous client blocks the thread it runs in, so the fake needs a thread of its own. [`examples/requests_pytest.py`](https://github.com/qisback/fakepve/blob/main/examples/requests_pytest.py) and [`examples/proxmoxer_pytest.py`](https://github.com/qisback/fakepve/blob/main/examples/proxmoxer_pytest.py) show it. The idea is a loop in a background thread, and `run_coroutine_threadsafe` for the few calls that are coroutines:
 
 ```python
 class ThreadedFake(object):
@@ -231,11 +231,11 @@ The workflows below use it. On GitLab the service's `command` can set the argume
 
 ## Pipelines
 
-Complete files are in [`examples/ci/`](../examples/ci). They are examples: replace the test and smoke-test steps with the client you are testing. `ci/guests.json` and `ci/smoke.sh` stand for your own files ([`examples/curl.sh`](../examples/curl.sh) makes a start for the latter).
+Complete files are in [`examples/ci/`](https://github.com/qisback/fakepve/blob/main/examples/ci). They are examples: replace the test and smoke-test steps with the client you are testing. `ci/guests.json` and `ci/smoke.sh` stand for your own files ([`examples/curl.sh`](https://github.com/qisback/fakepve/blob/main/examples/curl.sh) makes a start for the latter).
 
 ### GitHub Actions
 
-[`examples/ci/github-actions.yml`](../examples/ci/github-actions.yml) has four jobs: in-process pytest, a background process, a container built in the job, and a service container. The background-process job is:
+[`examples/ci/github-actions.yml`](https://github.com/qisback/fakepve/blob/main/examples/ci/github-actions.yml) has four jobs: in-process pytest, a background process, a container built in the job, and a service container. The background-process job is:
 
 ```yaml
 background-process:
@@ -265,11 +265,11 @@ The step that starts the process must end: the `&` puts it in the background and
 
 ### Forgejo and Gitea Actions
 
-[`examples/ci/forgejo-actions.yml`](../examples/ci/forgejo-actions.yml) is the same shape for `.forgejo/workflows/` or `.gitea/workflows/`. Self-hosted runners often have no `setup-python` or node available, so it uses the runner's `python3` and installs by name, as this repository's own workflow does (`python3 -m pip install ... aiohttp cryptography pytest pytest-asyncio`). Use `$RUNNER_TEMP` for the log file.
+[`examples/ci/forgejo-actions.yml`](https://github.com/qisback/fakepve/blob/main/examples/ci/forgejo-actions.yml) is the same shape for `.forgejo/workflows/` or `.gitea/workflows/`. Self-hosted runners often have no `setup-python` or node available, so it uses the runner's `python3` and installs by name, as this repository's own workflow does (`python3 -m pip install ... aiohttp cryptography pytest pytest-asyncio`). Use `$RUNNER_TEMP` for the log file.
 
 ### GitLab CI
 
-[`examples/ci/gitlab-ci.yml`](../examples/ci/gitlab-ci.yml) has pytest, a background process and a service container. GitLab starts a service next to the job and reaches it by its alias:
+[`examples/ci/gitlab-ci.yml`](https://github.com/qisback/fakepve/blob/main/examples/ci/gitlab-ci.yml) has pytest, a background process and a service container. GitLab starts a service next to the job and reaches it by its alias:
 
 ```yaml
 service-container:

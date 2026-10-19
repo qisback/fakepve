@@ -1,0 +1,62 @@
+# Documentation site, built with ProperDocs (https://properdocs.org) and the Material theme.
+# Build: pip install -r docs/requirements.txt && properdocs build --strict
+site_name: fakepve
+site_description: A lightweight fake of the Proxmox VE API for testing Proxmox clients
+repo_url: https://github.com/qisback/fakepve
+repo_name: laurence/fakepve
+copyright: Copyright Laurence Horrocks-Barlow. Licensed under the GNU Affero General Public License, version 3 or later.
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+validation:
+  links:
+    not_found: warn
+    anchors: warn
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Command line: cli.md
+  - Python API: python-api.md
+  - Scenarios: scenarios.md
+  - Errors: errors.md
+  - CI: ci.md
+  - How it works: how-it-works.md
+  - Reference:
+      - Endpoints: reference/endpoints.md
+  - Contributing: contributing.md
+
+exclude_docs: |
+  requirements.txt

@@ -3,6 +3,7 @@
 import importlib.util
 import os
 import re
+import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
@@ -60,6 +61,8 @@ def anchors(path):
 
 # ------------------------------------------------------------------------ links
 
+# Pages link to files outside docs/ by the repository's address; the file must exist.
+REPO_BLOB = 'https://github.com/qisback/fakepve/blob/main/'
 LINK = re.compile(r'!?\[[^\]]*\]\(([^)\s]+)\)')
 
 
@@ -69,6 +72,10 @@ def test_relative_links_resolve(path):
     text = re.sub(r'`[^`\n]*`', '', text)
     bad = []
     for target in LINK.findall(text):
+        if target.startswith(REPO_BLOB):
+            if not os.path.exists(os.path.join(ROOT, target[len(REPO_BLOB):].split('#')[0])):
+                bad.append(target)
+            continue
         if re.match(r'^[a-z][a-z0-9+.-]*:', target) or target.startswith('<'):
             continue
         name, _, fragment = target.partition('#')
@@ -164,3 +171,16 @@ def test_every_run_block_has_an_output_or_prints_nothing():
         for kind, line, _ in docs_runner.blocks(read(path)):
             assert not (kind == 'output' and previous != 'run'), '{0}:{1}'.format(rel(path), line)
             previous = kind
+
+
+# -------------------------------------------------------------------- the site
+
+@pytest.mark.skipif(importlib.util.find_spec('properdocs') is None or importlib.util.find_spec('material') is None,
+                    reason='needs properdocs and mkdocs-material (docs/requirements.txt)')
+def test_site_builds_in_strict_mode(tmp_path):
+    command = [sys.executable, '-m', 'properdocs', 'build', '--strict', '-q', '-d', str(tmp_path / 'site')]
+    result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=300)
+    assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-3000:]
+    assert 'WARNING' not in result.stdout + result.stderr
+    assert (tmp_path / 'site' / 'img' / 'quick-start.svg').exists()
+    assert (tmp_path / 'site' / 'index.html').exists()

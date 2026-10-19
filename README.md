@@ -64,6 +64,7 @@ It is a fake, not a copy of PVE: outside the hand-written areas a write succeeds
 - [CI](docs/ci.md): pytest, background processes, containers, GitHub, Forgejo, GitLab, certificates.
 - [How it works](docs/how-it-works.md): architecture and refreshing the data for a new PVE release.
 - [Endpoint reference](docs/reference/endpoints.md): every path and method, generated.
+- [Contributing](docs/contributing.md): checks, and building and publishing the documentation site.
 - [`examples/`](examples): runnable examples for aiohttp, requests, proxmoxer, curl and CI.
 
 ## Licence

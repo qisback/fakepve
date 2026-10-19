@@ -73,7 +73,7 @@ Starting a VM returns a task id (a UPID), which you follow through `tasks/{upid}
 
 ![A start task that fails](img/task-error.svg)
 
-[`examples/curl.sh`](../examples/curl.sh) is this walk-through as a script.
+[`examples/curl.sh`](https://github.com/qisback/fakepve/blob/main/examples/curl.sh) is this walk-through as a script.
 
 ## API tokens
 
@@ -83,7 +83,7 @@ PVE's other login is an API token, sent in one header and needing neither a tick
 $ curl -sk -H "Authorization: PVEAPIToken=root@pam!ci=s3cret" https://127.0.0.2:8006/api2/json/version
 ```
 
-The command line has no option to register tokens. Register them from Python with `pve.apitokens['root@pam!ci'] = 's3cret'`, for instance in a small server script such as [`examples/custom_server.py`](../examples/custom_server.py). A token has the privileges of its user.
+The command line has no option to register tokens. Register them from Python with `pve.apitokens['root@pam!ci'] = 's3cret'`, for instance in a small server script such as [`examples/custom_server.py`](https://github.com/qisback/fakepve/blob/main/examples/custom_server.py). A token has the privileges of its user.
 
 ## From Python
 
@@ -151,7 +151,7 @@ The command line builds its VMs from a JSON file. The top level is an object wit
 ]}
 ```
 
-[`examples/guests.json`](../examples/guests.json) has five VMs, one of each interesting kind. These are all the fields the loader reads:
+[`examples/guests.json`](https://github.com/qisback/fakepve/blob/main/examples/guests.json) has five VMs, one of each interesting kind. These are all the fields the loader reads:
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|

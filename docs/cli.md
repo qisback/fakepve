@@ -100,6 +100,6 @@ The command line does no friendly error handling; these are the usual causes and
 
 ## What the command line cannot do
 
-It builds VMs and sets the login, the time scale and a latency. Everything else is Python: other users and per-path permissions, API tokens, failures (`pve.fail`), locks, backups, migrations, quorum, offline nodes, flaky networks, Ceph, TFA, storage space. For a standalone fake with those, write a small script. [`examples/custom_server.py`](../examples/custom_server.py) is one: a limited user, a token, a VM in the middle of a backup and a failure by name, served until Ctrl-C.
+It builds VMs and sets the login, the time scale and a latency. Everything else is Python: other users and per-path permissions, API tokens, failures (`pve.fail`), locks, backups, migrations, quorum, offline nodes, flaky networks, Ceph, TFA, storage space. For a standalone fake with those, write a small script. [`examples/custom_server.py`](https://github.com/qisback/fakepve/blob/main/examples/custom_server.py) is one: a limited user, a token, a VM in the middle of a backup and a failure by name, served until Ctrl-C.
 
 ![Permissions, a lock and an error by name, against the custom server](img/errors.svg)

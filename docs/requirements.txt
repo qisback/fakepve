@@ -1,0 +1,5 @@
+# Needed to build the documentation site only; fakepve itself does not depend on them.
+properdocs==1.6.7
+mkdocs-material==9.7.7
+pymdown-extensions==12.3
+Markdown==3.11.1
