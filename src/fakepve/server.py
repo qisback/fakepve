@@ -30,6 +30,8 @@ from .model import FakeVm, Model, PveError, TaskError
 PORT = 8006  # PVE's API port; clients often assume it
 _hostseq = itertools.count(2)
 API = '/api2/json'
+# Guest agent commands answered, and the key of vm.agent each reads.
+AGENT_COMMANDS = {'get-osinfo': 'os', 'network-get-interfaces': 'interfaces', 'ping': None}
 # Where the authenticated user is kept on the request.
 USER = web.RequestKey('user', str) if hasattr(web, 'RequestKey') else 'user'
 GENERIC = web.RequestKey('generic', object) if hasattr(web, 'RequestKey') else 'generic'
@@ -38,6 +40,7 @@ __all__ = ['PORT', 'FakePve', 'FakeVm', 'next_loopback', 'settle']
 
 
 def next_loopback():
+    """The next unused loopback address, so each instance can use port 8006."""
     n = next(_hostseq)
     return '127.0.{0}.{1}'.format(n // 250, n % 250 + 2)
 
@@ -77,12 +80,7 @@ class FakePve(GenericApi, Model):
 
     # ------------------------------------------------------------- lifecycle
 
-    async def start(self, certfile, keyfile):
-        import ssl
-        ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-        ctx.load_cert_chain(certfile, keyfile)
-        if self.network.get('seed') is not None:
-            self._random.seed(self.network['seed'])
+    def _build_app(self):
         app = web.Application(middlewares=[self._middleware], client_max_size=1024 ** 4)
         r = app.router
         r.add_post(API + '/access/ticket', self._ticket)
@@ -115,11 +113,21 @@ class FakePve(GenericApi, Model):
         r.add_post(qemu + '/monitor', self._monitor)
         # Last, so the routes above keep priority: the rest of the schema.
         r.add_route('*', API + '/{tail:.*}', self._generic)
-        self.runner = web.AppRunner(app)
+        return app
+
+    async def start(self, certfile, keyfile):
+        """Listen on https://host:port with this certificate and key (PEM files)."""
+        import ssl
+        ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ctx.load_cert_chain(certfile, keyfile)
+        if self.network.get('seed') is not None:
+            self._random.seed(self.network['seed'])
+        self.runner = web.AppRunner(self._build_app())
         await self.runner.setup()
         await web.TCPSite(self.runner, self.host, self.port, ssl_context=ctx).start()
 
     async def stop(self):
+        """Stop listening."""
         if self.runner:
             await self.runner.cleanup()
             self.runner = None
@@ -696,10 +704,10 @@ class FakePve(GenericApi, Model):
         if vm.agent_hangs:
             await self.pause(10)
             raise PveError(500, "VM {0} qmp command 'guest-ping' failed - got timeout".format(vm.vmid))
-        key = {'get-osinfo': 'os', 'network-get-interfaces': 'interfaces', 'ping': None}.get(command, '?')
-        if key == '?':
+        if command not in AGENT_COMMANDS:
             raise PveError(501, "Method 'GET /nodes/{0}/qemu/{1}/agent/{2}' not implemented".format(
                 vm.node, vm.vmid, command))
+        key = AGENT_COMMANDS[command]
         return ok({'result': vm.agent.get(key) if key else {}})
 
     async def _monitor(self, request):

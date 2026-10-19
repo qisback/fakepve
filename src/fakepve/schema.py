@@ -77,6 +77,7 @@ class Schema(object):
 
 @functools.lru_cache(maxsize=None)
 def load():
+    """The vendored PVE schema, as a Schema."""
     raw = pkgutil.get_data('fakepve', 'data/pve-api.json.gz')
     return Schema(json.loads(gzip.decompress(raw))['paths'])
 

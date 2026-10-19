@@ -60,6 +60,7 @@ class GenericApi(object):
     # ---------------------------------------------------------- permissions
 
     def check_permissions(self, user, perms, values):
+        """Raise a 403 PveError unless user satisfies the schema's permission rule."""
         if user is not None and (self.acl is None or root_only(user)):
             return
         if perms is None:
@@ -128,6 +129,7 @@ class GenericApi(object):
     # -------------------------------------------------------------- results
 
     async def synthesise(self, match, method, info, user, values):
+        """The answer for a generic method: a task UPID, or a value built from its `returns`."""
         returns = info.get('returns') or {}
         if pve_schema.is_task(method, info) and (method, match.template) not in NOT_TASKS:
             node = values.get('node')

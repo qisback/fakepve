@@ -80,13 +80,16 @@ class FakeVm(object):
 
     @property
     def guest(self):
+        """The id as /cluster/resources shows it: qemu/<vmid>."""
         return 'qemu/{0}'.format(self.vmid)
 
     @property
     def ha_managed(self):
+        """True if ha_state is set."""
         return self.ha_state is not None
 
     def apply_pending(self):
+        """Move the pending config into the config (a start or reboot does this)."""
         for key, val in self.pending.items():
             if val is None:
                 self.config.pop(key, None)
@@ -95,9 +98,11 @@ class FakeVm(object):
         self.pending = {}
 
     def digest(self):
+        """The config digest PVE's clients pass back to detect concurrent changes."""
         return hashlib.sha1(json.dumps(self.config, sort_keys=True).encode()).hexdigest()
 
     def devices(self, cfg=None):
+        """Keys of the config that are devices (disks, nics, usb, pci)."""
         cfg = self.config if cfg is None else cfg
         return [k for k in cfg if k.startswith(DRIVE_PREFIXES + ('net', 'usb', 'hostpci')) and k[-1].isdigit()]
 
@@ -155,6 +160,7 @@ class Model(object):
     # ---------------------------------------------------------------- lookup
 
     def add_vm(self, *args, **kwargs):
+        """Add a FakeVm (arguments as FakeVm's) and its node; returns the VM."""
         vm = FakeVm(*args, **kwargs)
         self.vms.append(vm)
         self.nodes.setdefault(vm.node, {'online': True})
@@ -163,15 +169,18 @@ class Model(object):
         return vm
 
     def add_node(self, name, online=True):
+        """Add a node to the cluster."""
         self.nodes[name] = {'online': online}
 
     def vm(self, vmid):
+        """The VM with this id, or None."""
         for vm in self.vms:
             if vm.vmid == vmid:
                 return vm
         return None
 
     def find(self, node, vmid):
+        """The VM on this node, or a PveError (500, as PVE: no config file)."""
         vm = self.vm(int(vmid))
         if vm is None or vm.node != node:
             raise PveError(500, "Configuration file 'nodes/{0}/qemu-server/{1}.conf' does not exist".format(
@@ -181,6 +190,7 @@ class Model(object):
     # ------------------------------------------------------------------ time
 
     async def pause(self, secs):
+        """Sleep secs PVE seconds (scaled by time_scale; nothing at 0)."""
         if secs and self.time_scale:
             await asyncio.sleep(secs * self.time_scale)
 
@@ -205,6 +215,7 @@ class Model(object):
         vm.lock_holder = holder
 
     def release(self, vm, holder):
+        """Release the VM config lock if holder has it."""
         if vm.lock_holder == holder:
             vm.lock_holder = None
             if vm.lock_released:
@@ -256,12 +267,14 @@ class Model(object):
     # ---------------------------------------------------------------- tickets
 
     def issue_ticket(self, user):
+        """Make a login ticket; returns (ticket, csrf token)."""
         ticket = 'PVE:{0}:{1:08X}::{2}'.format(user, int(time.time()), secrets.token_hex(24))
         csrf = '{0:08X}:{1}'.format(int(time.time()), secrets.token_urlsafe(32))
         self.tickets[ticket] = {'user': user, 'csrf': csrf, 'expires': time.time() + self.ticket_ttl}
         return ticket, csrf
 
     def check_password(self, user, password):
+        """True if the password is right for user (pve.user, or an entry of pve.users)."""
         if user == self.user:
             return password == self.password
         return self.users.get(user) == password
@@ -275,6 +288,7 @@ class Model(object):
         self.acl.setdefault(user, []).append((path.rstrip('/') or '/', set(privs)))
 
     def allowed(self, user, path, priv):
+        """True if user holds priv on path. Everyone does until the first grant(); root@pam always does."""
         if self.acl is None or user.split('!')[0] == 'root@pam':
             return True
         paths = [path]
@@ -289,6 +303,7 @@ class Model(object):
         return False
 
     def require(self, user, path, priv):
+        """Like allowed(), but raises a 403 PveError in PVE's wording."""
         if not self.allowed(user, path, priv):
             raise PveError(403, 'Permission check failed ({0}, {1})'.format(path, priv))
 
@@ -299,13 +314,16 @@ class Model(object):
         self.quorate = False
 
     def regain_quorum(self):
+        """Undo lose_quorum()."""
         self.quorate = True
 
     def need_quorum(self):
+        """Raise PVE's no-quorum error (500) if quorum is lost."""
         if not self.quorate:
             raise PveError(500, 'cluster not ready - no quorum?')
 
     def set_node_offline(self, node, offline=True):
+        """Take a node offline (requests for it get 595), or bring it back with offline=False."""
         self.nodes.setdefault(node, {})['online'] = not offline
 
     async def hold_config_lock(self, vmid, secs):
@@ -319,6 +337,7 @@ class Model(object):
             asyncio.ensure_future(later())
 
     def release_config_lock(self, vmid):
+        """Release a lock taken by hold_config_lock()."""
         self.release(self.vm(vmid), 'scenario')
 
     async def backup(self, vmid, secs=30, user='root@pam'):
@@ -360,6 +379,7 @@ class Model(object):
         vm.config['lock'] = lock
 
     def unlock(self, vmid):
+        """Clear the VM's lock."""
         vm = self.vm(vmid)
         vm.lock = None
         vm.config.pop('lock', None)
@@ -381,12 +401,14 @@ class Model(object):
                 store['active'] = 0
 
     def ceph_recover(self):
+        """Undo ceph_down() and ceph_slow()."""
         self.ceph.update(down=False, slow=0.0, health='HEALTH_OK')
         for store in self.storages.values():
             if store.get('type') == 'rbd':
                 store['active'] = 1
 
     def ceph_storages(self):
+        """Names of the RBD storages."""
         return {name for name, store in self.storages.items() if store.get('type') == 'rbd'}
 
     def on_ceph(self, vm, keys=None):
@@ -447,9 +469,11 @@ class Model(object):
         return errors.errors_for(method, path, params)
 
     def revoke_tickets(self):
+        """Forget every login ticket: the next request gets 401."""
         self.tickets = {}
 
     def store_file(self, storage, name, size):
+        """Add a file to a storage, or raise TaskError if it does not fit in 'avail'."""
         store = self.storages[storage]
         if size > store.get('avail', float('inf')):
             raise TaskError('unable to write to storage {0!r}: No space left on device'.format(storage))
@@ -458,4 +482,5 @@ class Model(object):
             store['avail'] -= size
 
     def file_size(self, path):
+        """Size of a local file in bytes."""
         return os.path.getsize(path)
