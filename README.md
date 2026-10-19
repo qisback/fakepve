@@ -170,4 +170,8 @@ Run it, commit the two files, and run the tests: the coverage test sends a valid
 
 ## Licence
 
-Apache 2.0.
+Copyright Laurence Horrocks-Barlow. Licensed under the GNU Affero General Public License, version 3 or later; see `LICENSE`.
+
+The files in `src/fakepve/data/` are derived from Proxmox VE: the API schema from its API viewer (`apidoc.js`), and the error messages from its sources at `https://git.proxmox.com`. Proxmox VE is also AGPL-3.0, so they are distributed under the same terms.
+
+Not affiliated with or endorsed by Proxmox Server Solutions GmbH. Proxmox is a registered trademark of Proxmox Server Solutions GmbH.
