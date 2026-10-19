@@ -23,6 +23,7 @@ import urllib.parse
 import aiohttp
 from aiohttp import web
 
+from . import errors
 from .generic import GenericApi
 from .model import FakeVm, Model, PveError, TaskError
 
@@ -139,11 +140,26 @@ class FakePve(GenericApi, Model):
             raise ConnectionResetError('fakepve: connection dropped')
         if net['hang_rate'] and self._random.random() < net['hang_rate']:
             await asyncio.sleep(net['hang_secs'] * (self.time_scale or 1))
-        for (method, suffix), (status, message, html) in self.failures.items():
-            if request.method == method and request.path.endswith(suffix):
-                if html:
-                    return web.Response(status=status, text=message, content_type='text/html')
-                return error(status, message)
+        task_failure = None
+        for key, rule in list(self.failures.items()):
+            if request.method != key[0] or not self._failure_matches(request, generic, key[1]):
+                continue
+            if rule['times'] is not None:
+                rule['times'] -= 1
+                if rule['times'] <= 0:
+                    del self.failures[key]
+            if rule['error'] is None:
+                if rule['html']:
+                    return web.Response(status=rule['status'], text=rule['message'], content_type='text/html')
+                return error(rule['status'], rule['message'])
+            try:
+                entry, status, message, errs, match = await self._named_failure(request, generic, rule['error'])
+            except PveError as e:
+                return error(e.status, e.message)
+            if not entry['in_task']:
+                return error(status, message, errs)
+            task_failure = (message, match)
+            break
         try:
             try:
                 request[USER] = self._authenticate(request)
@@ -154,9 +170,41 @@ class FakePve(GenericApi, Model):
                 request[USER] = None
             if path_node and path_node in self.nodes and not self.nodes[path_node].get('online', True):
                 raise PveError(595, 'No route to host')
+            if task_failure:
+                return ok(await self._failed_task(request, path_node, *task_failure))
             return await handler(request)
         except PveError as e:
             return error(e.status, e.message, e.errors)
+
+    def _failure_matches(self, request, generic, suffix):
+        if '{' in suffix:  # a schema path template
+            match = generic or self.resolve(request, API)
+            return match is not None and match.template == suffix.rstrip('/')
+        return request.path.endswith(suffix)
+
+    async def _named_failure(self, request, generic, name):
+        """A catalogue error for this request: (entry, status, message, errors, match) with placeholders filled."""
+        match = generic or self.resolve(request, API)
+        entry = errors.find(request.method, request.path, name) if match else None
+        if entry is None:
+            raise PveError(500, 'fakepve: no error {0!r} for {1} {2}'.format(name, request.method, request.path))
+        values = dict(await params(request))
+        values.update(match.params)
+        values.setdefault('method', request.method)
+        values.setdefault('path', request.path)
+        names = [p for p in ((match.methods.get(request.method) or {}).get('parameters') or {}).get('properties', {})
+                 if p not in match.params]
+        status, message, errs = errors.render(entry, match.template, values, names)
+        return entry, status, message, errs, match
+
+    async def _failed_task(self, request, path_node, message, match):
+        """The UPID of a task that ends with TASK ERROR: message."""
+        node = path_node if path_node in self.nodes else sorted(self.nodes)[0]
+        user = request[USER] or 'root@pam'
+
+        async def body():
+            raise TaskError(message)
+        return await self.task(node, errors.task_type(match.template), match.params.get('vmid', ''), user, body)
 
     def _authenticate(self, request):
         if request.path == API + '/access/ticket':

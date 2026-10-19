@@ -13,6 +13,8 @@ import os
 import secrets
 import time
 
+from . import errors
+
 
 class PveError(Exception):
     """An API error as PVE reports it: status, message and per-field errors."""
@@ -416,9 +418,33 @@ class Model(object):
         """Drop (connection reset) or hang (no answer) a share of requests."""
         self.network.update(drop_rate=drop_rate, hang_rate=hang_rate, hang_secs=hang_secs, seed=seed)
 
-    def fail(self, method, suffix, status, message, html=False):
-        """Answer requests whose path ends with suffix with an error (html: a proxy's page)."""
-        self.failures[(method, suffix)] = (status, message, html)
+    def fail(self, method, suffix, status=None, message=None, html=False, error=None, times=None):
+        """Answer requests whose path ends with suffix with an error.
+
+        pve.fail('POST', '/nodes/pve1/qemu/100/status/start', 500, 'boom')   # your own status and message
+        pve.fail('POST', '/nodes/pve1/qemu/100/status/start', error='already_running')   # PVE's own error
+
+        error is a name from pve.errors_for(method, path) (the catalogue of PVE's real errors, and the
+        cross-cutting ones such as no_quorum). Its {placeholders} are filled from the request. An error
+        raised inside a PVE worker (in_task) answers with a UPID and ends the task with `TASK ERROR: message`.
+        html: a proxy's page instead of JSON. times: fail that many requests, then stop (default: every one).
+        """
+        if error is not None:
+            if status is not None or message is not None:
+                raise ValueError('give either error= or status and message')
+            known = errors.listing(method, suffix) if suffix.startswith('/') and '{' not in suffix else []
+            if known and errors.find(method, suffix, error) is None:
+                names = ', '.join(e['name'] for e in known)
+                raise ValueError('no error {0!r} for {1} {2}; known: {3}'.format(error, method, suffix, names))
+        elif status is None or message is None:
+            raise TypeError('fail() needs status and message, or error=')
+        self.failures[(method, suffix)] = {'status': status, 'message': message, 'html': html,
+                                           'error': error, 'times': times}
+
+    def errors_for(self, method, path, params=None):
+        """The errors a method can return at a concrete path: dicts with name, status, message, errors,
+        in_task and source. Any of the names can be given to fail(error=...)."""
+        return errors.errors_for(method, path, params)
 
     def revoke_tickets(self):
         self.tickets = {}
