@@ -29,6 +29,12 @@ Log in as `root@pam` with password `secret`. [Getting started](getting-started.m
 
 It is a fake, not a copy of PVE; the [known gaps](how-it-works.md#known-gaps) are stated plainly.
 
+## Support
+
+fakepve is free and always will be. If it saves you time, you can buy me a coffee.
+
+<a href="https://ko-fi.com/qisback"><img src="img/kofi.png" alt="Buy me a coffee at ko-fi.com" height="36"></a>
+
 ## Licence
 
 Licensed under the GNU Affero General Public License, version 3 or later. The data in `src/fakepve/data/` is derived from Proxmox VE (also AGPL-3.0). Not affiliated with or endorsed by Proxmox Server Solutions GmbH; Proxmox is a registered trademark of Proxmox Server Solutions GmbH.

@@ -1,5 +1,7 @@
 # fakepve
 
+<a href="https://ko-fi.com/qisback"><img src="docs/img/kofi.png" alt="Buy me a coffee at ko-fi.com" height="36"></a>
+
 A lightweight fake of the Proxmox VE API, for testing code that drives Proxmox without needing a cluster, and for putting that code through the things a real cluster does to it: slow shutdowns, locked VMs, lost quorum, flaky networks, Ceph trouble.
 
 It is for people writing Ansible modules, Terraform providers, proxmoxer scripts, and Go, Python or JavaScript clients for Proxmox, and for anyone who wants their tests and pipelines to run without a PVE host. It is one Python process on aiohttp: no PVE, QEMU, Ceph or corosync.
@@ -73,6 +75,8 @@ It is a fake, not a copy of PVE: outside the hand-written areas a write succeeds
 ## Support
 
 fakepve is free and always will be. If it saves you time, you can buy me a coffee at [ko-fi.com/qisback](https://ko-fi.com/qisback).
+
+<a href="https://ko-fi.com/qisback"><img src="docs/img/kofi.png" alt="Buy me a coffee at ko-fi.com" height="36"></a>
 
 ## Licence
 
