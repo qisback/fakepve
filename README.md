@@ -70,6 +70,10 @@ It is a fake, not a copy of PVE: outside the hand-written areas a write succeeds
 - [Contributing](docs/contributing.md): checks, and building and publishing the documentation site.
 - [`examples/`](examples): runnable examples for aiohttp, requests, proxmoxer, curl and CI.
 
+## Support
+
+fakepve is free and always will be. If it saves you time, you can buy me a coffee at [ko-fi.com/qisback](https://ko-fi.com/qisback).
+
 ## Licence
 
 Copyright Laurence Horrocks-Barlow. Licensed under the GNU Affero General Public License, version 3 or later; see `LICENSE`.
