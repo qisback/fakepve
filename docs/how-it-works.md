@@ -31,14 +31,14 @@ It stays one Python process on aiohttp. No PVE, QEMU, Ceph or corosync is run, a
 
 1. aiohttp matches the path against the hand-written routes, which are registered first. Anything else falls to the catch-all `/api2/json/{tail}` route, which is registered last.
 2. The **middleware** (`FakePve._middleware`) wraps every request:
-   1. records `(method, path, body)` in `pve.requests`;
-   2. resolves the path against the schema, for the generic handler and for placeholders;
-   3. applies the network scenarios: latency and jitter (global and per node), then a dropped connection (the transport is closed) or a hang (a sleep);
-   4. looks for a matching `pve.fail` rule. A plain rule answers at once with its status and message, or an HTML page. A rule by catalogue name answers with the rendered error, or, if the catalogue says the error happens in a worker, remembers that a task has to fail and goes on;
-   5. authenticates: an `Authorization: PVEAPIToken=` header, or the `PVEAuthCookie` ticket (checking expiry, and the `CSRFPreventionToken` header on writes). A few generic endpoints need no login; for those a failed login is not an error;
+   1. resolves the path against the schema, for the generic handler and for placeholders;
+   2. applies the network scenarios, to every client: latency and jitter (global and per node), then a dropped connection (the transport is closed) or a hang (a sleep);
+   3. authenticates: an `Authorization: PVEAPIToken=` header, or the `PVEAuthCookie` ticket (checking expiry, and the `CSRFPreventionToken` header on writes). A failed login is answered 401 at once, with the body unread and recorded empty. The login request itself and the few generic endpoints that need no login carry on without a user;
+   4. reads the request body (within `pve.body_timeout` and `pve.client_max_size`) and records `(method, path, body)` in `pve.requests`, with secrets redacted;
+   5. looks for a matching `pve.fail` rule. A plain rule answers at once with its status and message, or an HTML page. A rule by catalogue name answers with the rendered error, or, if the catalogue says the error happens in a worker, remembers that a task has to fail and goes on;
    6. returns 595 if the path's node is offline;
    7. runs the handler, or, for a pending task failure, starts the task that fails.
-3. A `PveError` from anywhere becomes the response: the status, the first line of the message as the reason phrase, and `{"data": null, "message": "...\n"}` plus `errors` for a 400.
+3. A `PveError` from anywhere becomes the response: the status, the first line of the message as the reason phrase, and `{"data": null, "message": "...\n"}` plus `errors` for a 400. Any other exception becomes `500 internal error`; it is logged by the `fakepve` logger, and the client sees no traceback.
 
 ## Hand-written routes
 

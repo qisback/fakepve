@@ -124,6 +124,8 @@ class Model(object):
         self.latency = 0.0
         # Ticket lifetime; PVE's is 2 hours.
         self.ticket_ttl = 7200
+        # Real seconds a termproxy or VNC console ticket can open its websocket (PVE: 40).
+        self.vnc_ticket_ttl = 40
         # PVE seconds a write or task waits for a held VM config lock.
         self.lock_wait = 10
         # PVE ends a shutdown task after this unless the request gives a timeout.
@@ -153,7 +155,9 @@ class Model(object):
         self.tickets = {}
         self.tasks = {}
         self.tasklog = []
+        # Every request seen, as (method, path, body); the oldest go beyond max_requests.
         self.requests = []
+        self.max_requests = 10000
         self.failures = {}
         self._pids = itertools.count(1000)
 

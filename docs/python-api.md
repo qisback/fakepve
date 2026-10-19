@@ -2,7 +2,7 @@
 
 Everything in fakepve is plain Python state you can read and set. This page explains every public attribute and method of `FakePve` and `FakeVm`, and the helper modules. The [signature index](#signature-index) at the end is generated from the code, so it is always complete; the explanations are written by hand, and a test checks that every public name in the index is explained here.
 
-Contents: [the fake](#the-fake) | [building the cluster](#building-the-cluster) | [VMs](#vms) | [time and tasks](#time-and-tasks) | [scenarios](#scenario-methods) | [access](#access) | [failures and errors](#failures-and-errors) | [what the fake records](#what-the-fake-records) | [storages](#storages) | [internals](#internals) | [helper modules](#helper-modules) | [signature index](#signature-index)
+Contents: [the fake](#the-fake) | [building the cluster](#building-the-cluster) | [VMs](#vms) | [time and tasks](#time-and-tasks) | [scenarios](#scenario-methods) | [access](#access) | [failures and errors](#failures-and-errors) | [what the fake records](#what-the-fake-records) | [limits](#limits) | [storages](#storages) | [internals](#internals) | [helper modules](#helper-modules) | [signature index](#signature-index)
 
 All durations are PVE seconds. The examples on this page run as they stand.
 
@@ -257,6 +257,8 @@ By default there is one login and everyone who has it can do everything. These a
 - `pve.allowed(user, path, priv)` answers whether a user holds a privilege on a path; `pve.require(user, path, priv)` raises the 403 `PveError` instead, in PVE's words: `Permission check failed (/vms/100, VM.PowerMgmt)`.
 - While `acl` is `None` everyone is allowed everything. Once there is a grant, `root@pam` still is, and every other user needs a grant for each privilege. A token is checked as its user and as the token itself, so grants to either apply.
 - `pve.issue_ticket(user)` makes a login ticket and returns `(ticket, csrf)`, valid for `pve.ticket_ttl` seconds (7200). `pve.tickets` holds them: ticket to `{'user', 'csrf', 'expires'}`. `pve.revoke_tickets()` forgets them all, so the next request is a 401.
+- Task status and log (`tasks/{upid}/status` and `/log`) are readable by the task's owner (a user also sees its tokens' tasks, a token only its own) and by anyone with `Sys.Audit` on `/nodes/<node>`; others get 403, and the task list shows the same set. This is PVE's rule (`PVE/API2/Tasks.pm`).
+- `PUT /access/password` follows PVE (`PVE/API2/AccessControl.pm`): API tokens are refused, the `password` must be 8 to 64 characters, `root@pam` may set any user's password, and any other user may only change their own and must give the current one as `confirmation-password` (400 without it, 500 `authentication failure` if it is wrong).
 
 <!-- run -->
 ```python
@@ -339,11 +341,24 @@ give either error= or status and message
 
 | Attribute | Contents |
 |---|---|
-| `pve.requests` | Every request seen, as `(method, path, body)` with the path without its query string and the body as bytes. Assert on it to check what your client sent. |
+| `pve.requests` | The requests seen, as `(method, path, body)` with the path without its query string and the body as bytes. Assert on it to check what your client sent. It is a plain list holding the last `pve.max_requests` entries. Values of `password`, `new-password`, `confirmation-password`, `ticket`, `vncticket`, `otp` and `tfa-challenge` are recorded as `***`, bodies are cut at 64 KiB, and a request that failed to log in is recorded with an empty body, because the fake does not read the body of a request it will not serve. |
 | `pve.tasks`, `pve.tasklog` | Tasks, as above. |
 | `pve.tickets` | Live login tickets. |
 | `pve.termdata` | The text frames the terminal websocket (termproxy) received. |
 | `pve.uploaded` | The fields of the last ISO upload (`content`, `filename`, `data`, ...) as a dict. |
+
+## Limits
+
+The fake is a test tool, not a hardened server, but a few limits keep a misbehaving client (or a stray port scan) from using up the machine. All can be changed; set them before `start()` for the ones that shape the web application.
+
+| Attribute | Default | Effect |
+|---|---|---|
+| `pve.client_max_size` | 64 MiB | Largest request body in bytes. A bigger one is answered 413 and the connection closed. Raise it before `start()` to upload bigger files. |
+| `pve.body_timeout` | 30 | Real seconds a client may take to send its request body. A slower one is answered 408 and the connection closed. `0` waits for ever. |
+| `pve.max_requests` | 10000 | Entries kept in `pve.requests`; the oldest are dropped. |
+| `pve.vnc_ticket_ttl` | 40 | Real seconds a termproxy or VNC console ticket can open its websocket, as in PVE. A ticket opens one connection, only for the user that asked for it and only with `VM.Console`. |
+
+A request that is not logged in is answered 401 before anything else happens: its body is not read, and `pve.fail` rules do not apply to it (see [Failures](scenarios.md#arbitrary-failures)). Network scenarios (latency, drops, hangs) still apply to everyone. An exception inside a handler is logged by the `fakepve` logger and answered as `500 internal error` without a traceback.
 
 ## Storages
 
@@ -487,6 +502,7 @@ Attributes after construction:
 | `time_scale` | `0.0` |
 | `latency` | `0.0` |
 | `ticket_ttl` | `7200` |
+| `vnc_ticket_ttl` | `40` |
 | `lock_wait` | `10` |
 | `shutdown_default_timeout` | `60` |
 | `ha_delay` | `10` |
@@ -503,6 +519,7 @@ Attributes after construction:
 | `tasks` | `{}` |
 | `tasklog` | `[]` |
 | `requests` | `[]` |
+| `max_requests` | `10000` |
 | `failures` | `{}` |
 | `host` | `'127.0.0.2'` |
 | `port` | `8006` |
@@ -510,6 +527,8 @@ Attributes after construction:
 | `termdata` | `[]` |
 | `monitor_allowed` | `True` |
 | `uploaded` | `None` |
+| `client_max_size` | `67108864` |
+| `body_timeout` | `30.0` |
 
 ### FakeVm
 

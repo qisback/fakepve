@@ -13,9 +13,12 @@ nodes, migrations, network and Ceph trouble, and more.
 """
 
 import asyncio
+import hmac
 import itertools
 import json
+import logging
 import random
+import re
 import secrets
 import time
 import urllib.parse
@@ -24,6 +27,7 @@ import aiohttp
 from aiohttp import web
 
 from . import errors
+from . import schema as pve_schema
 from .generic import GenericApi
 from .model import FakeVm, Model, PveError, TaskError
 
@@ -56,15 +60,78 @@ def error(status, message, errors=None):
     return web.json_response(body, status=status, reason=message.splitlines()[0][:200])
 
 
+def bad_request(**fields):
+    """PVE's 400 with a message per field."""
+    return PveError(400, 'Parameter verification failed.', fields)
+
+
 async def params(request):
     """Request parameters as PVE takes them: query string, form or JSON body."""
     out = dict(request.query)
     body = await request.read()
-    if body and request.content_type == 'application/json':
-        out.update(json.loads(body))
-    elif body and request.content_type != 'multipart/form-data':
-        out.update(urllib.parse.parse_qsl(body.decode()))
+    if not body or request.content_type == 'multipart/form-data':
+        return out
+    try:
+        if request.content_type == 'application/json':
+            data = json.loads(body)
+            if not isinstance(data, dict):
+                raise ValueError('not an object')
+            out.update(data)
+        else:
+            out.update(urllib.parse.parse_qsl(body.decode()))
+    except RecursionError:
+        raise bad_request(body='JSON nested too deeply') from None
+    except UnicodeDecodeError:
+        raise bad_request(body='request body is not valid UTF-8') from None
+    except ValueError:
+        raise bad_request(body='request body is not a JSON object' if request.content_type == 'application/json'
+                          else 'malformed request body') from None
     return out
+
+
+def int_param(values, name, default=None, minimum=None):
+    """An integer parameter, or PVE's 400 for one that is not."""
+    if values.get(name) is None:
+        return default
+    value, err = pve_schema.check_value({'type': 'integer', 'minimum': minimum} if minimum is not None
+                                        else {'type': 'integer'}, values[name])
+    if err:
+        raise bad_request(**{name: err})
+    return value
+
+
+# Parameters whose values never reach pve.requests.
+SECRET_KEYS = ('password', 'new-password', 'confirmation-password', 'ticket', 'vncticket', 'otp', 'tfa-challenge')
+SECRET_FORM = re.compile(rb'(?<![^&])((?:' + b'|'.join(re.escape(k.encode()) for k in SECRET_KEYS) + rb')=)[^&]*')
+# Recorded bodies are cut here, so a large upload does not sit in memory a second time.
+RECORDED_BODY_MAX = 64 * 1024
+
+
+def _redact_json(node):
+    if isinstance(node, dict):
+        return dict((k, '***' if k in SECRET_KEYS else _redact_json(v)) for k, v in node.items())
+    if isinstance(node, list):
+        return [_redact_json(v) for v in node]
+    return node
+
+
+def redact(body, content_type):
+    """The body as recorded: secrets replaced by ***, long bodies cut."""
+    if content_type == 'application/json':
+        try:
+            data = json.loads(body)
+            clean = _redact_json(data)
+            if clean != data:
+                body = json.dumps(clean).encode()
+        except (ValueError, RecursionError):
+            body = b''  # unparseable, so it could hold anything
+    elif content_type != 'multipart/form-data':
+        body = SECRET_FORM.sub(rb'\g<1>***', body)
+    return body[:RECORDED_BODY_MAX]
+
+
+class BodyTimeout(Exception):
+    """The client stopped sending its request body."""
 
 
 class FakePve(GenericApi, Model):
@@ -76,12 +143,16 @@ class FakePve(GenericApi, Model):
         self.termdata = []
         self.monitor_allowed = True
         self.uploaded = None
+        # Largest request body accepted, in bytes (PVE's own limit is similar for uploads).
+        self.client_max_size = 64 * 1024 ** 2
+        # Real seconds a client may take to send its request body; 0 waits for ever.
+        self.body_timeout = 30.0
         self._random = random.Random()
 
     # ------------------------------------------------------------- lifecycle
 
     def _build_app(self):
-        app = web.Application(middlewares=[self._middleware], client_max_size=1024 ** 4)
+        app = web.Application(middlewares=[self._middleware], client_max_size=self.client_max_size)
         r = app.router
         r.add_post(API + '/access/ticket', self._ticket)
         r.add_put(API + '/access/password', self._password)
@@ -136,11 +207,10 @@ class FakePve(GenericApi, Model):
 
     @web.middleware
     async def _middleware(self, request, handler):
-        body = await request.read()
-        self.requests.append((request.method, request.path, body))
         net = self.network
         generic = request[GENERIC] = self.resolve(request, API) if 'tail' in request.match_info else None
         path_node = request.match_info.get('node') or (generic and generic.params.get('node'))
+        # Network trouble hits every client, logged in or not; injected failures only hit those who are.
         delay = net['latency'] + self._random.uniform(0, net['jitter']) + net['node_latency'].get(path_node, 0)
         await self.pause(delay)
         if net['drop_rate'] and self._random.random() < net['drop_rate']:
@@ -148,6 +218,32 @@ class FakePve(GenericApi, Model):
             raise ConnectionResetError('fakepve: connection dropped')
         if net['hang_rate'] and self._random.random() < net['hang_rate']:
             await asyncio.sleep(net['hang_secs'] * (self.time_scale or 1))
+        try:
+            request[USER] = self._authenticate(request)
+        except PveError as e:
+            # Some generic endpoints (realm list, ...) need no login.
+            if not (generic and self.is_world(generic, request.method)):
+                self._record(request, b'')
+                return error(e.status, e.message, e.errors)
+            request[USER] = None
+        try:
+            body = await self._read_body(request)
+        except BodyTimeout:
+            self._record(request, b'')
+            return self._closing(error(408, 'Request Timeout: the request body did not arrive in time'))
+        except web.HTTPRequestEntityTooLarge:
+            self._record(request, b'')
+            return self._closing(error(413, 'Request body too large'))
+        self._record(request, body)
+        try:
+            return await self._answer(request, handler, generic, path_node)
+        except (PveError, web.HTTPException, asyncio.CancelledError):
+            raise
+        except Exception:  # noqa: BLE001 - nothing may reach the client as a traceback
+            logging.getLogger('fakepve').exception('unhandled error in %s %s', request.method, request.path)
+            return error(500, 'internal error')
+
+    async def _answer(self, request, handler, generic, path_node):
         task_failure = None
         for key, rule in list(self.failures.items()):
             if request.method != key[0] or not self._failure_matches(request, generic, key[1]):
@@ -169,13 +265,6 @@ class FakePve(GenericApi, Model):
             task_failure = (message, match)
             break
         try:
-            try:
-                request[USER] = self._authenticate(request)
-            except PveError:
-                # Some generic endpoints (realm list, ...) need no login.
-                if not (generic and self.is_world(generic, request.method)):
-                    raise
-                request[USER] = None
             if path_node and path_node in self.nodes and not self.nodes[path_node].get('online', True):
                 raise PveError(595, 'No route to host')
             if task_failure:
@@ -183,6 +272,26 @@ class FakePve(GenericApi, Model):
             return await handler(request)
         except PveError as e:
             return error(e.status, e.message, e.errors)
+
+    async def _read_body(self, request):
+        """The whole request body, within body_timeout real seconds."""
+        try:
+            return await asyncio.wait_for(request.read(), self.body_timeout or None)
+        except asyncio.TimeoutError:
+            raise BodyTimeout() from None
+
+    @staticmethod
+    def _closing(response):
+        """Answer, then close the connection: the rest of the body will not be read."""
+        response.force_close()
+        return response
+
+    def _record(self, request, body):
+        """Add the request to pve.requests, secrets redacted, and drop the oldest beyond max_requests."""
+        self.requests.append((request.method, request.path, redact(body, request.content_type)))
+        excess = len(self.requests) - self.max_requests
+        if excess > 0:
+            del self.requests[:excess]
 
     def _failure_matches(self, request, generic, suffix):
         if '{' in suffix:  # a schema path template
@@ -239,7 +348,7 @@ class FakePve(GenericApi, Model):
 
     async def _ticket(self, request):
         p = await params(request)
-        user, password = p.get('username', ''), p.get('password', '')
+        user, password = str(p.get('username', '')), p.get('password', '')
         if '@' not in user:
             user += '@pam'
         if not self.check_password(user, password):
@@ -251,17 +360,24 @@ class FakePve(GenericApi, Model):
         return ok({'ticket': ticket, 'CSRFPreventionToken': csrf, 'username': user, 'cap': {}})
 
     async def _password(self, request):
-        p = await params(request)
+        # PVE: allowtoken 0; anyone may change their own password, but only root without confirming the old one.
         user = request[USER]
-        if p.get('userid') != user.split('!')[0] and user != 'root@pam':
+        if '!' in user:
+            raise PveError(403, 'Permission check failed (API token not allowed)')
+        p = self._verify(request, await params(request))
+        userid = p['userid']
+        if userid != user and user != 'root@pam':
             raise PveError(403, 'Permission check failed (/access, User.Modify)')
-        current = self.password if p.get('userid') == self.user else self.users.get(p.get('userid'))
-        if p.get('confirmation-password') is not None and p.get('confirmation-password') != current:
-            raise PveError(401, 'confirmation password is wrong')
-        if p.get('userid') == self.user:
+        if user != 'root@pam':
+            confirmation = p.get('confirmation-password')
+            if confirmation is None:
+                raise bad_request(**{'confirmation-password': 'password is required to modify user'})
+            if not self.check_password(user, confirmation):
+                raise PveError(500, 'authentication failure')
+        if userid == self.user:
             self.password = p['password']
         else:
-            self.users[p['userid']] = p['password']
+            self.users[userid] = p['password']
         return ok()
 
     async def _version(self, request):
@@ -320,29 +436,53 @@ class FakePve(GenericApi, Model):
     def _task_view(self, task):
         return dict((k, v) for k, v in task.items() if k != 'log')
 
+    def _verify(self, request, values, drop=()):
+        """The values checked against the method's schema, as the generic handler does: PVE's 400 on errors."""
+        info = self.resolve(request, API).methods[request.method]
+        values = dict((k, v) for k, v in values.items() if k not in drop)
+        values.update(request.match_info)
+        values, errs = pve_schema.validate(info.get('parameters'), values)
+        if errs:
+            raise PveError(400, 'Parameter verification failed.', errs)
+        return values
+
+    @staticmethod
+    def _task_owner(user, task):
+        """PVE: a user sees its own tasks and those of its tokens; a token only its own."""
+        owner = task['user']
+        return user == owner or user == owner.split('!')[0]
+
     async def _task_list(self, request):
         node = request.match_info['node']
         user = request[USER]
-        vmid = request.query.get('vmid')
+        p = self._verify(request, await params(request))
+        vmid = p.get('vmid')
         audit = self.allowed(user, '/nodes/' + node, 'Sys.Audit')
         data = [self._task_view(t) for t in self.tasklog
-                if t['node'] == node and (vmid is None or t['id'] == vmid) and (audit or t['user'] == user)]
+                if t['node'] == node and (vmid is None or t['id'] == str(vmid))
+                and (audit or self._task_owner(user, t))]
         data.sort(key=lambda t: -t['starttime'])
-        return ok(data[:int(request.query.get('limit', 50))])
+        start = p.get('start', 0)
+        return ok(data[start:start + p.get('limit', 50)])
 
     def _get_task(self, request):
+        """The task of the request's UPID; PVE lets its owner and Sys.Audit on the node see it."""
         task = self.tasks.get(request.match_info['upid'])
         if task is None or task['node'] != request.match_info['node']:
             raise PveError(500, "unable to parse worker upid '{0}'".format(request.match_info['upid']))
+        user = request[USER]
+        if not self._task_owner(user, task):
+            self.require(user, '/nodes/' + task['node'], 'Sys.Audit')
         return task
 
     async def _task_status(self, request):
+        self._verify(request, await params(request))
         return ok(self._task_view(self._get_task(request)))
 
     async def _task_log(self, request):
+        p = self._verify(request, await params(request))
         lines = self._get_task(request)['log']
-        start = int(request.query.get('start', 0))
-        limit = int(request.query.get('limit', 50))
+        start, limit = p.get('start', 0), p.get('limit', 50)
         return ok([{'n': n + 1, 't': t} for n, t in enumerate(lines)][start:start + limit])
 
     # -------------------------------------------------------------- storage
@@ -385,7 +525,9 @@ class FakePve(GenericApi, Model):
         self.require(user, '/', 'Sys.Audit')
         self.require(user, '/', 'Sys.Modify')
         p = await params(request)
-        size = int(p.get('size', 1024 ** 2))
+        # size is the fake's own parameter: how large the download pretends to be.
+        size = int_param(p, 'size', 1024 ** 2, minimum=0)
+        p = self._verify(request, p, drop=('size',))
 
         async def body():
             await self.pause(5)
@@ -398,20 +540,23 @@ class FakePve(GenericApi, Model):
         user = request[USER]
         self.require(user, '/storage/' + name, 'Datastore.AllocateTemplate')
         body = await request.read()
-        boundary = request.content_type == 'multipart/form-data' and \
-            request.headers['Content-Type'].split('boundary=', 1)[1]
-        if not boundary or int(request.headers.get('Content-Length', -1)) != len(body):
-            raise PveError(400, 'bad upload request')
-        fields = {}
-        for part in body.split(b'--' + boundary.encode())[1:-1]:
-            head, _, data = part[2:-2].partition(b'\r\n\r\n')
-            disposition = head.decode().split('\r\n')[0]
-            field = disposition.split('name="', 1)[1].split('"', 1)[0]
-            if 'filename="' in disposition:
-                fields['filename'] = disposition.split('filename="', 1)[1].split('"', 1)[0]
-                fields['data'] = data
-            else:
-                fields[field] = data.decode()
+        try:
+            boundary = request.content_type == 'multipart/form-data' and \
+                request.headers['Content-Type'].split('boundary=', 1)[1]
+            if not boundary or int(request.headers.get('Content-Length', -1)) != len(body):
+                raise ValueError('not a complete multipart body')
+            fields = {}
+            for part in body.split(b'--' + boundary.encode())[1:-1]:
+                head, _, data = part[2:-2].partition(b'\r\n\r\n')
+                disposition = head.decode().split('\r\n')[0]
+                field = disposition.split('name="', 1)[1].split('"', 1)[0]
+                if 'filename="' in disposition:
+                    fields['filename'] = disposition.split('filename="', 1)[1].split('"', 1)[0]
+                    fields['data'] = data
+                else:
+                    fields[field] = data.decode()
+        except (IndexError, ValueError):  # UnicodeDecodeError is one
+            raise PveError(400, 'bad upload request') from None
         if fields.get('content') != 'iso':
             raise PveError(400, 'Parameter verification failed.', {'content': 'value not allowed'})
         self.uploaded = fields
@@ -423,7 +568,10 @@ class FakePve(GenericApi, Model):
     # ------------------------------------------------------------------ VMs
 
     def _vm(self, request, priv=None):
-        vm = self.find(request.match_info['node'], request.match_info['vmid'])
+        vmid, err = pve_schema.check_value({'type': 'integer', 'minimum': 100}, request.match_info['vmid'])
+        if err:
+            raise bad_request(vmid=err)
+        vm = self.find(request.match_info['node'], vmid)
         if priv:
             self.require(request[USER], '/vms/{0}'.format(vm.vmid), priv)
         return vm
@@ -458,6 +606,7 @@ class FakePve(GenericApi, Model):
         vm = self._vm(request, 'VM.PowerMgmt')
         user = request[USER]
         p = await params(request)
+        int_param(p, 'timeout', minimum=0)
         handler = getattr(self, '_do_' + action, None)
         if handler is None:
             raise PveError(501, "Method 'POST /nodes/{0}/qemu/{1}/status/{2}' not implemented".format(
@@ -712,7 +861,12 @@ class FakePve(GenericApi, Model):
 
     async def _monitor(self, request):
         vm = self._vm(request, 'VM.Monitor')
-        command = (await params(request)).get('command', '')
+        command = (await params(request)).get('command')
+        if command is None:
+            raise bad_request(command='property is missing and it is not optional')
+        command = str(command)
+        if not command.strip():
+            raise bad_request(command='value must be at least 1 characters long')
         user = request[USER]
         if not command.startswith('info'):
             self.require(user, '/', 'Sys.Modify')
@@ -727,11 +881,16 @@ class FakePve(GenericApi, Model):
 
     # -------------------------------------------------------------- consoles
 
-    async def _termproxy(self, request):
-        vm = self._vm(request, 'VM.Console')
-        vm.rfb = False
+    def _issue_vnc_ticket(self, request, vm, rfb):
+        """A console ticket for the requesting user, valid for vnc_ticket_ttl real seconds and one connection."""
+        vm.rfb = rfb
         vm.vncticket = 'PVEVNC:{0}'.format(secrets.token_hex(8))
         vm.vncuser = request[USER]
+        vm.vncissued = time.time()
+
+    async def _termproxy(self, request):
+        vm = self._vm(request, 'VM.Console')
+        self._issue_vnc_ticket(request, vm, False)
         return ok({'ticket': vm.vncticket, 'port': '5900', 'user': vm.vncuser,
                    'upid': 'UPID:{0}:termproxy:{1}:'.format(vm.node, vm.vmid)})
 
@@ -740,32 +899,40 @@ class FakePve(GenericApi, Model):
         p = await params(request)
         if not p.get('websocket'):
             return await self._termproxy(request)
-        vm.rfb = True
-        vm.vncticket = 'PVEVNC:{0}'.format(secrets.token_hex(8))
+        self._issue_vnc_ticket(request, vm, True)
         vm.vncpassword = secrets.token_hex(4) if p.get('generate-password') else None
-        data = {'ticket': vm.vncticket, 'port': '5900', 'user': request[USER],
+        data = {'ticket': vm.vncticket, 'port': '5900', 'user': vm.vncuser,
                 'upid': 'UPID:{0}:vncproxy:{1}:'.format(vm.node, vm.vmid)}
         if vm.vncpassword:
             data['password'] = vm.vncpassword
         return ok(data)
 
+    def _take_vnc_ticket(self, request, vm):
+        """Consume the ticket the request presents, as PVE checks it: user, age, and a match. Returns (user, ticket)."""
+        ticket = getattr(vm, 'vncticket', None)
+        given = request.query.get('vncticket') or ''
+        fresh = time.time() - getattr(vm, 'vncissued', 0) < self.vnc_ticket_ttl
+        if not (ticket and fresh and request[USER] == vm.vncuser
+                and hmac.compare_digest(given.encode(), ticket.encode())):
+            raise PveError(401, 'permission denied - invalid PVEVNC ticket')
+        vm.vncticket = None  # one connection per ticket
+        return vm.vncuser, ticket
+
     async def _vncwebsocket(self, request):
-        vm = self._vm(request)
+        vm = self._vm(request, 'VM.Console')
+        user, ticket = self._take_vnc_ticket(request, vm)
         ws = web.WebSocketResponse(protocols=('binary',))
         await ws.prepare(request)
-        if request.query.get('vncticket') != getattr(vm, 'vncticket', None):
-            await ws.close()
-            return ws
         if getattr(vm, 'rfb', False):
             try:
-                await self._rfb(ws, vm)
+                await self._rfb(ws, vm, vm.vncpassword or ticket)
             except ConnectionError:
                 pass
             await ws.close()
             return ws
         hello = await ws.receive()
         if self.refuse_terminal or hello.type != aiohttp.WSMsgType.TEXT or \
-                hello.data != '{0}:{1}\n'.format(vm.vncuser, vm.vncticket):
+                hello.data != '{0}:{1}\n'.format(user, ticket):
             await ws.close()
             return ws
         await ws.send_bytes(b'OK')
@@ -780,7 +947,7 @@ class FakePve(GenericApi, Model):
                 await ws.send_bytes(payload.encode())
         return ws
 
-    async def _rfb(self, ws, vm):
+    async def _rfb(self, ws, vm, secret):
         """A VNC server: RFB 3.8, VNC authentication, raw encoding (needs cryptography)."""
         import struct
         try:
@@ -808,7 +975,7 @@ class FakePve(GenericApi, Model):
             return
         challenge = secrets.token_bytes(16)
         await ws.send_bytes(challenge)
-        key = ((vm.vncpassword or vm.vncticket).encode() + b'\0' * 8)[:8]
+        key = (secret.encode() + b'\0' * 8)[:8]
         key = bytes(int('{:08b}'.format(b)[::-1], 2) for b in key)
         enc = Cipher(TripleDES(key * 3), modes.ECB()).encryptor()
         if await read(16) != enc.update(challenge) + enc.finalize():

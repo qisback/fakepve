@@ -580,7 +580,7 @@ True
 
 ## Arbitrary failures
 
-`pve.fail(method, path_suffix, status, message)` answers any request whose path ends with the suffix with that error. It fires before login is checked, and it stays in force until you remove it from `pve.failures`, unless you give `times=n`.
+`pve.fail(method, path_suffix, status, message)` answers any request whose path ends with the suffix with that error. It applies to requests that are logged in (an unauthenticated request gets its 401 and does not use up `times`), to the login request `POST /access/ticket`, and to the few endpoints that need no login, so a login outage can be simulated. It stays in force until you remove it from `pve.failures`, unless you give `times=n`.
 
 <!-- run -->
 ```python
@@ -609,7 +609,7 @@ async with fake() as (pve, api):
 ```python
 async with fake() as (pve, api):
     pve.fail('GET', '/version', 502, '<html><body>Bad Gateway</body></html>', html=True)
-    async with api.session.get('/api2/json/version') as rsp:
+    async with api.session.get('/api2/json/version', headers=api.headers) as rsp:
         print(rsp.status, rsp.content_type, await rsp.text())
 ```
 
