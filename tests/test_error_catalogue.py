@@ -105,9 +105,9 @@ async def test_http_error_by_name_and_one_shot(pve, api):
     status, body = await api.call('DELETE', '/nodes/pve1/qemu/100')
     assert (status, body['message']) == (500, 'VM 100 is running - destroy failed\n')
     assert (await api.call('DELETE', '/nodes/pve1/qemu/100'))[0] == 200  # the second goes through
-    pve.fail('GET', '/nodes/pve1/qemu/100/config', error='no_quorum')  # persistent, like fail(status, message)
+    pve.fail('PUT', '/nodes/pve1/qemu/100/config', error='no_quorum')  # persistent, like fail(status, message)
     for _ in range(2):
-        status, body = await api.call('GET', '/nodes/pve1/qemu/100/config')
+        status, body = await api.call('PUT', '/nodes/pve1/qemu/100/config')
         assert (status, body['message']) == (500, 'cluster not ready - no quorum?\n')
 
 
@@ -130,7 +130,7 @@ async def test_existing_fail_still_works_and_bad_names_are_refused(pve, api):
         pve.fail('POST', '/x', 500, 'boom', error='no_quorum')
     with pytest.raises(TypeError):
         pve.fail('POST', '/x')
-    pve.fail('GET', '/cluster/status', error='nope')  # a partial suffix is not checked until asked
+    pve.fail('GET', 'cluster/status', error='nope')  # a partial suffix is not checked until asked
     status, body = await api.call('GET', '/cluster/status')
     assert status == 500 and 'no error' in body['message']
 
@@ -156,5 +156,5 @@ async def test_every_catalogued_error_can_be_triggered(pve, api):
                 want = (expected['status'], expected['message'], expected.get('errors'))
             if got != want:
                 bad.append((method, template, expected['name'], got, want))
-    assert count >= 2400
+    assert count >= errors.meta()['errors']  # all of the catalogue, and the cross-cutting sample
     assert not bad, bad[:5]
