@@ -69,7 +69,7 @@ jobs:
       pve:
         image: registry.example.org/yourteam/fakepve:latest
         ports:
-          - 8006:8006
+          - 127.0.0.1:8006:8006
         options: >-
           --health-cmd "python -c \"import socket; socket.create_connection(('127.0.0.1', 8006), 2)\""
           --health-interval 5s --health-retries 10

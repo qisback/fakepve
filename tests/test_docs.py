@@ -26,7 +26,7 @@ docs_runner = load_tool('docs_runner')
 
 
 def markdown_files():
-    out = [os.path.join(ROOT, 'README.md')]
+    out = [os.path.join(ROOT, 'README.md'), os.path.join(ROOT, 'SECURITY.md')]
     for base, _, names in os.walk(DOCS):
         out += [os.path.join(base, n) for n in sorted(names) if n.endswith('.md')]
     return sorted(out)
@@ -173,6 +173,18 @@ def test_every_run_block_has_an_output_or_prints_nothing():
             previous = kind
 
 
+# ------------------------------------------------------------ the security policy
+
+def test_security_policy_is_published_and_has_no_email():
+    policy = read(os.path.join(ROOT, 'SECURITY.md'))
+    assert 'Report a vulnerability' in policy and 'qisback/fakepve' in policy
+    assert not re.search(r'[\w.+-]+@[\w-]+\.[\w.]+', policy), 'report through GitHub, not by email'
+    # The site page includes the policy file, so the two cannot differ.
+    assert read(os.path.join(DOCS, 'security.md')).strip() == '--8<-- "SECURITY.md"'
+    assert 'security.md' in read(os.path.join(ROOT, 'properdocs.yml'))
+    assert '(SECURITY.md)' in read(os.path.join(ROOT, 'README.md'))
+
+
 # -------------------------------------------------------------------- the site
 
 @pytest.mark.skipif(importlib.util.find_spec('properdocs') is None or importlib.util.find_spec('material') is None,
@@ -184,3 +196,5 @@ def test_site_builds_in_strict_mode(tmp_path):
     assert 'WARNING' not in result.stdout + result.stderr
     assert (tmp_path / 'site' / 'img' / 'quick-start.svg').exists()
     assert (tmp_path / 'site' / 'index.html').exists()
+    page = (tmp_path / 'site' / 'security' / 'index.html').read_text(encoding='utf-8')
+    assert 'Security policy' in page and 'Report a vulnerability' in page

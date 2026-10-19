@@ -40,6 +40,9 @@ markdown_extensions:
       permalink: true
   - pymdownx.highlight
   - pymdownx.superfences
+  - pymdownx.snippets:
+      base_path: ['.']
+      check_paths: true
 
 validation:
   links:
@@ -57,6 +60,7 @@ nav:
   - How it works: how-it-works.md
   - Reference:
       - Endpoints: reference/endpoints.md
+  - Security: security.md
   - Contributing: contributing.md
 
 exclude_docs: |

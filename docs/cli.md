@@ -16,7 +16,7 @@ fakepve GUESTS_FILE [--host HOST] [--port PORT] [--user USER] [--password PASSWO
 | Option | Default | Meaning |
 |---|---|---|
 | `guests` (positional) | required | The JSON file describing the VMs: `{"guests": [...]}`. The fields are listed in [Getting started](getting-started.md#the-guests-file). |
-| `--host HOST` | `127.0.0.2` | The address to listen on. Use `0.0.0.0` in a container. On Linux every `127.x.y.z` address is local, so give each fake its own and keep port 8006. Where only `127.0.0.1` is local (macOS, for one), use that with different ports. |
+| `--host HOST` | `127.0.0.2` | The address to listen on. Use `0.0.0.0` only in a container, and publish its port on loopback (see [security](#security)). On Linux every `127.x.y.z` address is local, so give each fake its own and keep port 8006. Where only `127.0.0.1` is local (macOS, for one), use that with different ports. |
 | `--port PORT` | `8006` | The TCP port. 8006 is PVE's own, and many clients assume it. |
 | `--user USER` | `root@pam`, or `$PVE_USER` | The login. Give it with its realm (`user@realm`). This user can do everything unless the fake is used from Python with [grants](scenarios.md#permissions). |
 | `--password PASSWORD` | `secret`, or `$PVE_PASS` | Its password. |
@@ -27,6 +27,16 @@ fakepve GUESTS_FILE [--host HOST] [--port PORT] [--user USER] [--password PASSWO
 | `-h`, `--help` | | Show the usage. |
 
 Environment variables: `PVE_USER` and `PVE_PASS` set the defaults of `--user` and `--password`; an option on the command line wins. There are no others.
+
+## Security
+
+fakepve is a test tool, not a security boundary: the login `root@pam` / `secret` is the same for everyone who reads the documentation, and whoever can connect can change the fake's state. Keep it on a loopback address, which is the default. If `--host` is not a loopback address and the password is still the default, it prints a warning to stderr at start-up:
+
+```text
+fakepve: WARNING: listening on 0.0.0.0 with the default password "secret", which is public. ...
+```
+
+Set `--password` or `PVE_PASS` to silence it, and keep the port off untrusted networks. More in the [security policy](security.md).
 
 ## Time
 
@@ -40,7 +50,7 @@ Durations (a shutdown that takes 30 seconds, a latency of 2 seconds) are in PVE 
 
 ## What it prints
 
-One line when it is ready, and nothing more:
+One line on stdout when it is ready, and nothing more, apart from the [exposure warning](#security) on stderr when it applies:
 
 ```text
 fakepve listening on https://127.0.0.2:8006

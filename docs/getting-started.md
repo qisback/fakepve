@@ -33,8 +33,9 @@ python -m fakepve examples/guests.json --host 127.0.0.2
 
 It prints one line, `fakepve listening on https://127.0.0.2:8006`, and serves until you press Ctrl-C. The login is `root@pam` with password `secret`; change them with `--user` and `--password`, or the environment variables `PVE_USER` and `PVE_PASS`. All options are in [CLI](cli.md).
 
-Two things to know straight away:
+Three things to know straight away:
 
+- It is a test tool with a public default login. Keep it on loopback (the default address `127.0.0.2` is), and set a password with `--password` or `PVE_PASS` if anyone else can reach the port. See the [security policy](security.md).
 - It serves HTTPS with a self-signed certificate, so clients must skip verification or be given a certificate they trust. See [CI](ci.md#certificates).
 - `--time-scale` defaults to `1`, which is real time. A task that PVE would take 30 seconds over takes 30 seconds. For a quick look use `--time-scale 0`, where every task finishes before the request returns.
 

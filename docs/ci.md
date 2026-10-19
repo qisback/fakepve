@@ -208,14 +208,16 @@ The repository's `Dockerfile` builds an image from `python:3.12-slim`, installs 
 
 ```console
 docker build -t fakepve .
-docker run --rm -p 8006:8006 fakepve
+docker run --rm -p 127.0.0.1:8006:8006 fakepve
 ```
+
+**Publish the port on loopback** (`127.0.0.1:` in front, as above). The image listens on `0.0.0.0` inside the container so that the published port works, and its login is the public default `root@pam` / `secret`; `-p 8006:8006` would offer that login to every network the host is on. The container prints a warning on stderr for exactly this reason. To silence it, and to make the login private where the container is reachable from other hosts, set a password: `docker run -e PVE_PASS=... fakepve`.
 
 By default the container serves `examples/guests.json` (copied into the image as `guests.json`) on `0.0.0.0:8006` with `--time-scale 0`, runs as an unprivileged user, and has a health check that connects to the port. Arguments after the image name replace the default command:
 
 ```console
-docker run --rm -p 8006:8006 fakepve guests.json --host 0.0.0.0 --time-scale 0.01
-docker run --rm -p 8006:8006 -v "$PWD/mine.json:/opt/fakepve/mine.json:ro" fakepve mine.json --host 0.0.0.0
+docker run --rm -p 127.0.0.1:8006:8006 fakepve guests.json --host 0.0.0.0 --time-scale 0.01
+docker run --rm -p 127.0.0.1:8006:8006 -v "$PWD/mine.json:/opt/fakepve/mine.json:ro" fakepve mine.json --host 0.0.0.0
 ```
 
 Remember `--host 0.0.0.0` whenever you replace the arguments: inside a container the default `127.0.0.2` is unreachable from outside. The certificate is self-signed with no SAN, as above, so clients skip verification or you mount your own with `--cert` and `--key`.
@@ -227,7 +229,7 @@ FROM fakepve:latest
 COPY ci/guests.json /opt/fakepve/guests.json
 ```
 
-The workflows below use it. On GitLab the service's `command` can set the arguments instead.
+The workflows below use it. A service container is meant to be reachable from its own job only (publish its port on `127.0.0.1`, as the GitHub example does), so the default login is acceptable there, and the warning in its log is expected; give the service `PVE_PASS` (GitHub and Forgejo: `env:` under the service; GitLab: `variables:`) if you want it gone, and have the tests read the same value. On GitLab the service's `command` can set the arguments instead.
 
 ## Pipelines
 

@@ -4,6 +4,8 @@ A lightweight fake of the Proxmox VE API, for testing code that drives Proxmox w
 
 It is for people writing Ansible modules, Terraform providers, proxmoxer scripts, and Go, Python or JavaScript clients for Proxmox, and for anyone who wants their tests and pipelines to run without a PVE host. It is one Python process on aiohttp: no PVE, QEMU, Ceph or corosync.
 
+> **Test tool: bind it to loopback.** fakepve has no real security. Its default login, `root@pam` / `secret`, is public, so anyone who can reach the port can do anything to the fake. Run it on a loopback address (the default), publish container ports as `127.0.0.1:8006:8006`, and set `PVE_PASS` when anyone but you can reach the port. See the [security policy](SECURITY.md).
+
 ## Why
 
 A real cluster is slow to build, hard to break on purpose and impossible to share between pipelines. The failures that matter to a client (a shutdown that outlasts its timeout, a VM locked by a backup, a node that disappears, a task that ends in `TASK ERROR`) are exactly the ones that are hard to produce. fakepve answers like PVE 8/9 does, with PVE's status codes and its own wording, and lets a test cause each of those failures with one line.
@@ -64,6 +66,7 @@ It is a fake, not a copy of PVE: outside the hand-written areas a write succeeds
 - [CI](docs/ci.md): pytest, background processes, containers, GitHub, Forgejo, GitLab, certificates.
 - [How it works](docs/how-it-works.md): architecture and refreshing the data for a new PVE release.
 - [Endpoint reference](docs/reference/endpoints.md): every path and method, generated.
+- [Security policy](SECURITY.md): what the fake is and is not, and how to report a vulnerability.
 - [Contributing](docs/contributing.md): checks, and building and publishing the documentation site.
 - [`examples/`](examples): runnable examples for aiohttp, requests, proxmoxer, curl and CI.
 
