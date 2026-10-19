@@ -50,7 +50,7 @@ def render_check(check):
     """The schema's permission rule as a short line."""
     form = check[0]
     if form == 'perm':
-        opts = dict(zip(check[3::2], check[4::2]))
+        opts = dict(zip(check[3::2], check[4::2], strict=False))
         privs = (' or ' if opts.get('any') else ', ').join(check[2]) or 'no privilege'
         return '{0}: {1}'.format(check[1], privs)
     if form in ('and', 'or'):

@@ -7,15 +7,16 @@ name = "fakepve"
 version = "0.1.0"
 description = "A lightweight fake Proxmox VE API for testing Proxmox clients"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = {text = "AGPL-3.0-or-later"}
 authors = [{name = "Laurence Horrocks-Barlow"}]
-dependencies = ["aiohttp>=3.8"]
+# Floors are the oldest releases without a published advisory (checked with pip-audit); see SECURITY.md.
+dependencies = ["aiohttp>=3.14.3"]
 
 [project.optional-dependencies]
 # Self-signed certificates and VNC authentication.
-crypto = ["cryptography>=36"]
-test = ["cryptography>=36", "pytest", "pytest-asyncio"]
+crypto = ["cryptography>=50.0.0"]
+test = ["cryptography>=50.0.0", "pytest", "pytest-asyncio"]
 
 [project.scripts]
 fakepve = "fakepve.__main__:main"

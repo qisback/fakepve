@@ -24,7 +24,7 @@ jobs:
           python-version: '3.13'
       - name: build
         run: |
-          python -m pip install . -r docs/requirements.txt
+          python -m pip install -c .github/ci-constraints.txt . -r docs/requirements.txt
           properdocs build --strict
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

@@ -10,7 +10,10 @@
 # arguments after the image name to change that, for example
 #   docker run -p 127.0.0.1:8006:8006 fakepve guests.json --host 0.0.0.0 --time-scale 0.01
 # or build an image FROM this one that adds your own guests file.
-FROM python:3.12-slim
+# Pinned by digest (the multi-arch index of python:3.12-slim). To bump, read the new digest and replace it:
+#   curl -sI -H "Authorization: Bearer $(curl -s 'https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/python:pull' | jq -r .token)" #     -H 'Accept: application/vnd.oci.image.index.v1+json' https://registry-1.docker.io/v2/library/python/manifests/3.12-slim | grep -i docker-content-digest
+# or `docker buildx imagetools inspect python:3.12-slim`. Do it for each Python security release.
+FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
 
 WORKDIR /opt/fakepve
 COPY pyproject.toml README.md LICENSE ./

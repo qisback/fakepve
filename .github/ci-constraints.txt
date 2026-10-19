@@ -1,0 +1,9 @@
+# Exact versions of the tools CI installs, used with `pip install -c`. Bump them together,
+# run the tests, and check `pip-audit` for the new set. Not a lock of every transitive package.
+aiohttp==3.14.5
+cryptography==50.0.2
+pytest==9.1.1
+pytest-asyncio==1.4.0
+ruff==0.17.1
+requests==2.34.2
+PyYAML==6.0.3

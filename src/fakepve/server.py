@@ -950,10 +950,7 @@ class FakePve(GenericApi, Model):
     async def _rfb(self, ws, vm, secret):
         """A VNC server: RFB 3.8, VNC authentication, raw encoding (needs cryptography)."""
         import struct
-        try:
-            from cryptography.hazmat.decrepit.ciphers.algorithms import TripleDES
-        except ImportError:  # cryptography < 43
-            from cryptography.hazmat.primitives.ciphers.algorithms import TripleDES
+        from cryptography.hazmat.decrepit.ciphers.algorithms import TripleDES
         from cryptography.hazmat.primitives.ciphers import Cipher, modes
         width, height, rgb = getattr(vm, 'screen', (4, 2, bytes(range(24))))
         stream = b''

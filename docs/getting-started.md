@@ -6,7 +6,7 @@ Contents: [install](#install) | [run it](#run-it) | [first requests with curl](#
 
 ## Install
 
-fakepve needs Python 3.9 or later and aiohttp. `cryptography` is optional: it makes the self-signed certificate (so the command line needs it unless you bring your own certificate) and the VNC authentication of the console websocket.
+fakepve needs Python 3.10 or later and aiohttp 3.14.3 or later (the oldest release without a published security advisory). `cryptography` is optional: it makes the self-signed certificate (so the command line needs it unless you bring your own certificate) and the VNC authentication of the console websocket.
 
 From a checkout:
 

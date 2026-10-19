@@ -85,7 +85,7 @@ class GenericApi(object):
         form = check[0]
         if form == 'perm':
             path = check[1]
-            opts = dict(zip(check[3::2], check[4::2]))
+            opts = dict(zip(check[3::2], check[4::2], strict=False))
             for name in set(self._names(path)):
                 if values.get(name) is None:
                     return False, path

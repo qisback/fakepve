@@ -9,8 +9,6 @@ fakepve GUESTS_FILE [--host HOST] [--port PORT] [--user USER] [--password PASSWO
 
 ![fakepve --help](img/cli-help.svg)
 
-(The wording of the `options:` heading depends on the Python version; Python 3.9 says `optional arguments:`.)
-
 ## Options
 
 | Option | Default | Meaning |

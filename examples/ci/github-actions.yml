@@ -10,8 +10,8 @@ jobs:
   in-process:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
       - run: pip install 'fakepve[crypto]' pytest pytest-asyncio aiohttp
@@ -21,8 +21,8 @@ jobs:
   background-process:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
       - run: pip install 'fakepve[crypto]'
@@ -45,7 +45,7 @@ jobs:
   container:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: docker build -t fakepve path/to/fakepve
       - name: start fakepve
         run: |
@@ -74,7 +74,7 @@ jobs:
           --health-cmd "python -c \"import socket; socket.create_connection(('127.0.0.1', 8006), 2)\""
           --health-interval 5s --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: run the client under test
         env:
           PVE_URL: https://localhost:8006
