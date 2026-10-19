@@ -38,10 +38,12 @@ Pages in `docs/` link to the examples with the repository's address (`https://gi
 
 ## Publishing the site
 
-The build is plain static files in `site/`, so any static host works. There is deliberately no publishing workflow in the repository.
+The project site, https://qisback.github.io/fakepve/, is built and published by `.github/workflows/pages.yml` on every push to `main` (repository setting: Pages, source "GitHub Actions"). `.github/workflows/ci.yml` runs ruff, the tests and the strict build on pull requests.
 
-- **GitHub Pages:** copy `site/` to a `gh-pages` branch (`properdocs gh-deploy` does this from a checkout with push access), or upload it as a Pages artifact from a workflow of your own, and enable Pages for that branch.
+The build is plain static files in `site/`, so a fork can publish it anywhere:
+
+- **GitHub Pages:** the workflow above, or `properdocs gh-deploy` from a checkout with push access, which pushes `site/` to a `gh-pages` branch.
 - **Forgejo or Gitea Pages:** push the contents of `site/` to the branch or repository your Pages setup serves.
 - **Any static host:** copy `site/` to the web root, for example `rsync -a --delete site/ host:/var/www/fakepve/`.
 
-If the site is served from a sub-path, set `site_url` in `properdocs.yml` to its address, so that links and the search index resolve.
+Set `site_url` in `properdocs.yml` to the address the site is served from, so that links and the search index resolve.

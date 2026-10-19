@@ -3,7 +3,8 @@
 site_name: fakepve
 site_description: A lightweight fake of the Proxmox VE API for testing Proxmox clients
 repo_url: https://github.com/qisback/fakepve
-repo_name: laurence/fakepve
+repo_name: qisback/fakepve
+site_url: https://qisback.github.io/fakepve/
 copyright: Copyright Laurence Horrocks-Barlow. Licensed under the GNU Affero General Public License, version 3 or later.
 docs_dir: docs
 site_dir: site
