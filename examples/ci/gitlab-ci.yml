@@ -1,0 +1,50 @@
+# GitLab CI (.gitlab-ci.yml): in-process, background process, and a service container.
+# ci/guests.json (a guests file, see docs/getting-started.md) and ci/smoke.sh are your own files.
+# Replace `pytest tests` and `sh ci/smoke.sh` with whatever drives your Proxmox client.
+stages: [test]
+
+in-process:
+  stage: test
+  image: python:3.12-slim
+  script:
+    - pip install 'fakepve[crypto]' pytest pytest-asyncio aiohttp
+    - pytest tests
+
+background-process:
+  stage: test
+  image: python:3.12-slim
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq curl
+    - pip install 'fakepve[crypto]'
+  script:
+    - python -m fakepve ci/guests.json --host 127.0.0.2 --time-scale 0 > fakepve.log 2>&1 &
+    - |
+      for i in $(seq 1 30); do
+        curl -ksf https://127.0.0.2:8006/api2/json/access/domains >/dev/null && break
+        sleep 1
+      done
+    - PVE_URL=https://127.0.0.2:8006 sh ci/smoke.sh
+  artifacts:
+    when: on_failure
+    paths: [fakepve.log]
+
+# A service container is reachable by its alias. `command` replaces the image's CMD,
+# so a guests file baked into your image can be named here.
+service-container:
+  stage: test
+  image: python:3.12-slim
+  services:
+    - name: registry.example.org/yourteam/fakepve:latest
+      alias: pve
+      command: ["guests.json", "--host", "0.0.0.0", "--time-scale", "0"]
+  variables:
+    PVE_URL: https://pve:8006
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq curl
+  script:
+    - |
+      for i in $(seq 1 30); do
+        curl -ksf "$PVE_URL/api2/json/access/domains" >/dev/null && break
+        sleep 1
+      done
+    - sh ci/smoke.sh

@@ -1,0 +1,36 @@
+# Forgejo / Gitea Actions (.forgejo/workflows/ or .gitea/workflows/).
+# ci/guests.json (a guests file, see docs/getting-started.md) and ci/smoke.sh are your own files.
+# Runners often have no node or setup-python mirror, so this uses the runner's own
+# python3 and installs by name, as fakepve's own workflow does.
+# Replace `pytest tests` and `sh ci/smoke.sh` with whatever drives your Proxmox client.
+name: tests
+on:
+  push:
+  pull_request:
+
+jobs:
+  in-process:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install 'fakepve[crypto]' pytest pytest-asyncio aiohttp
+      - run: python3 -m pytest -q tests
+
+  background-process:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install 'fakepve[crypto]'
+      - name: start fakepve and wait for it
+        run: |
+          python3 -m fakepve ci/guests.json --host 127.0.0.2 --time-scale 0 > "$RUNNER_TEMP/fakepve.log" 2>&1 &
+          for i in $(seq 1 30); do
+            curl -ksf https://127.0.0.2:8006/api2/json/access/domains >/dev/null && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/fakepve.log"
+          exit 1
+      - name: run the client under test
+        env:
+          PVE_URL: https://127.0.0.2:8006
+        run: sh ci/smoke.sh

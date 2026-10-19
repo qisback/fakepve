@@ -1,0 +1,81 @@
+# GitHub Actions: four ways to run tests against fakepve. Keep the one you need.
+# ci/guests.json (a guests file, see docs/getting-started.md) and ci/smoke.sh are your own files.
+# Replace `pytest tests` and `sh ci/smoke.sh` with whatever drives your Proxmox
+# client (ansible-playbook, terraform test, a Go test binary, ...).
+name: tests
+on: [push, pull_request]
+
+jobs:
+  # 1. The fake runs inside the test process (a pytest fixture). Nothing to start or wait for.
+  in-process:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install 'fakepve[crypto]' pytest pytest-asyncio aiohttp
+      - run: pytest tests
+
+  # 2. The fake runs as a background process; the job waits until it answers.
+  background-process:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install 'fakepve[crypto]'
+      - name: start fakepve
+        run: |
+          python -m fakepve ci/guests.json --host 127.0.0.2 --time-scale 0 > fakepve.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -ksf https://127.0.0.2:8006/api2/json/access/domains >/dev/null && exit 0
+            sleep 1
+          done
+          cat fakepve.log
+          exit 1
+      - name: run the client under test
+        env:
+          PVE_URL: https://127.0.0.2:8006
+        run: sh ci/smoke.sh
+
+  # 3. The fake as a container built from fakepve's Dockerfile (check fakepve out first, or
+  #    publish the image to a registry and pull it).
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t fakepve path/to/fakepve
+      - name: start fakepve
+        run: |
+          docker run -d --name fakepve -p 127.0.0.1:8006:8006 fakepve
+          for i in $(seq 1 30); do
+            curl -ksf https://127.0.0.1:8006/api2/json/access/domains >/dev/null && exit 0
+            sleep 1
+          done
+          docker logs fakepve
+          exit 1
+      - name: run the client under test
+        env:
+          PVE_URL: https://127.0.0.1:8006
+        run: sh ci/smoke.sh
+
+  # 4. A service container from a registry. GitHub passes no arguments to a service, so the
+  #    image has to serve the guests you want by default (build your own FROM the fakepve image).
+  service:
+    runs-on: ubuntu-latest
+    services:
+      pve:
+        image: registry.example.org/yourteam/fakepve:latest
+        ports:
+          - 8006:8006
+        options: >-
+          --health-cmd "python -c \"import socket; socket.create_connection(('127.0.0.1', 8006), 2)\""
+          --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: run the client under test
+        env:
+          PVE_URL: https://localhost:8006
+        run: sh ci/smoke.sh
