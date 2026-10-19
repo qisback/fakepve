@@ -18,7 +18,7 @@ NOT_TASKS = {('POST', '/cluster/sdn/lock'), ('POST', '/nodes/{node}/qemu/{vmid}/
 
 
 def root_only(user):
-    return user is None or user.split('!')[0] == 'root@pam'
+    return user.split('!')[0] == 'root@pam'
 
 
 class GenericApi(object):
@@ -44,10 +44,13 @@ class GenericApi(object):
         if info is None:
             raise PveError(501, "Method '{0} {1}' not implemented".format(method, request.path))
         values = dict(params)
-        values.update(match.params)
+        declared = (info.get('parameters') or {}).get('properties', {})
+        # A few path parameters are missing from the schema; they are not checked.
+        values.update((k, v) for k, v in match.params.items() if k in declared)
         values, errors = pve_schema.validate(info.get('parameters'), values)
         if errors:
             raise PveError(400, 'Parameter verification failed.', errors)
+        values.update((k, v) for k, v in match.params.items() if k not in declared)
         if 'node' in match.params and match.params['node'] not in self.nodes:
             raise PveError(500, "hostname lookup '{0}' failed - failed to get address info for: {0}: "
                                 "Name or service not known".format(match.params['node']))
@@ -57,14 +60,16 @@ class GenericApi(object):
     # ---------------------------------------------------------- permissions
 
     def check_permissions(self, user, perms, values):
+        if user is not None and (self.acl is None or root_only(user)):
+            return
         if perms is None:
-            ok, why = (self.acl is None or root_only(user)), 'user != root@pam'
+            ok, why = False, 'user != root@pam'
         elif 'check' in perms:
             ok, why = self._check(user, perms['check'], values)
         elif perms.get('user') in ('all', 'world'):
             return
         else:
-            ok, why = self.acl is None or root_only(user), 'user != root@pam'
+            ok, why = False, 'user != root@pam'
         if not ok:
             raise PveError(403, 'Permission check failed ({0})'.format(why))
 
@@ -114,7 +119,7 @@ class GenericApi(object):
             path = str(values.get('path', ''))
             return self._has(user, path, 'Permissions.Modify'), '{0}, Permissions.Modify'.format(path)
         # Unknown rule: root only.
-        return self.acl is None or root_only(user), 'user != root@pam'
+        return False, 'user != root@pam'
 
     @staticmethod
     def _names(path):

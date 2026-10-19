@@ -111,9 +111,29 @@ All state is plain and inspectable: `vm.config`, `vm.pending`, `vm.status` / `vm
 
 ## Endpoints
 
-`access/ticket`, `access/password`, `version`, `nodes`, `cluster/resources`, `cluster/status`, `cluster/ceph/status`; per node: `tasks`, `tasks/{upid}/status`, `tasks/{upid}/log`, `storage`, `storage/{s}/content`, `storage/{s}/download-url`, `storage/{s}/upload`; per VM: `status/current`, `status/{start,stop,shutdown,reboot,reset,suspend,resume}`, `config` (GET, PUT, and POST as a task), `pending`, `termproxy`, `vncproxy`, `vncwebsocket`, `agent/{get-osinfo,network-get-interfaces,ping}`, `monitor`.
+Every endpoint in the PVE 9 API schema answers: 680 methods on 449 paths, under `/api2/json`. The `/api2/extjs` prefix is not served.
 
-Anything else gets 404, so a client calling something not yet faked finds out straight away.
+Some areas are stateful, modelled by hand: `access/ticket`, `access/password`, `version`, `nodes`, `cluster/resources`, `cluster/status`, `cluster/ceph/status`; per node: `tasks`, `tasks/{upid}/status`, `tasks/{upid}/log`, `storage`, `storage/{s}/content`, `storage/{s}/download-url`, `storage/{s}/upload`; per VM: `status/current`, `status/{start,stop,shutdown,reboot,reset,suspend,resume}`, `config` (GET, PUT, and POST as a task), `pending`, `termproxy`, `vncproxy`, `vncwebsocket`, `agent/{get-osinfo,network-get-interfaces,ping}`, `monitor`.
+
+Everything else is answered from the schema and keeps no state: a write succeeds but changes nothing, and a read returns a value of the right shape (outcomes and errors, not behaviour). The generic answers:
+
+- check parameters, path parameters included, with PVE's own wording: HTTP 400 and `{"data": null, "errors": {"vmid": "value must have a minimum value of 100"}}`. Missing and undefined properties, enums, types (booleans take 0/1, true/false, yes/no, on/off), minimum and maximum, length and pattern are checked.
+- check permissions as the schema states them (`perm` with `any`, `and`, `or`, `userid-param`, `userid-group`, `perm-modify`, and `user: all` or `world`) against `pve.grant`, with `{param}` filled in. 403 reads `Permission check failed (/vms/100, VM.PowerMgmt)`. A method with no permissions in the schema, or a form not known here, is root only.
+- build the result from the schema's `returns`: required properties are filled, lists have one item, numbers are their minimum. Values come from the request path and the model where they can (node, vmid, storage).
+- start a real task for methods that return a UPID, so `tasks/{upid}/status` and `/log` work (they finish at once with `OK`).
+- record the request in `pve.requests`.
+
+Paths not in the schema get 404, and a method the schema does not have on a known path gets 501. A node name the model does not know gets 500 `hostname lookup ... failed`.
+
+### Refreshing the schema
+
+The schema is the PVE API viewer's `apidoc.js`, trimmed of prose and stored in `src/fakepve/data/pve-api.json.gz`; `pve-api.meta.json` beside it records the source, date and hash.
+
+```console
+python tools/fetch_schema.py [URL_OR_FILE]
+```
+
+Run it, commit the two files, and run the tests: the coverage test sends a valid request to every method in the schema and checks the answer against `returns`.
 
 ## Licence
 
