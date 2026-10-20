@@ -4,6 +4,8 @@ All notable changes to fakepve are recorded here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-20
+
 ### Added
 
 - LXC containers keep state. `pve.add_ct()` and `FakeCt` add one, and `POST /nodes/{node}/lxc` creates one. Containers appear in `/cluster/resources` (type `lxc`) and `/nodes/{node}/lxc`, and share the VM id space (`VM 100 already exists on node 'pve1'`, `CT 100 already exists ...`). Create, destroy, `status/current`, `status/{start,stop,shutdown,reboot,suspend,resume}`, `config` (GET and PUT, with `digest`, `delete`, `revert`, `current` and `snapshot`), `pending`, `clone`, `template`, `migrate` (GET and POST), `resize`, `interfaces` and `snapshot` (list, create, delete, rollback, snapshot config) read and write that state, with PVE's messages, task types (`vzcreate`, `vzstart`, `vzstop`, `vzshutdown`, `vzreboot`, `vzdestroy`, `vzclone`, `vzsnapshot`, ...), locks and privileges.
@@ -73,6 +75,7 @@ First public release.
 - The self-signed certificate names `localhost`, `127.0.0.1` and the address it is served on (subject alternative names), so a client can verify it with the certificate as its CA.
 - Licensed under the GNU Affero General Public License, version 3 or later.
 
-[Unreleased]: https://github.com/qisback/fakepve/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/qisback/fakepve/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/qisback/fakepve/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/qisback/fakepve/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/qisback/fakepve/releases/tag/v0.1.0
