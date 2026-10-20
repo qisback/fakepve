@@ -581,6 +581,22 @@ class StorageApi(StatefulRoutes):
         vtype, owner, fmt = self._parse_volname(store, volname)
         return sid, volname, volid, store, vtype, owner, fmt
 
+    def volume_exists(self, volid):
+        """True or False if the fake knows whether a volume (an OS template) is on its storage, else None.
+
+        A container create task fails for a False. Known: the storage exists and lists volumes of that
+        content type (uploaded, downloaded or set in its `volumes`); a volume missing from such a list is
+        missing. A storage with none of that content, or an unknown storage, answers None (accepted).
+        """
+        sid, colon, volname = str(volid).partition(':')
+        if not colon or sid not in self.storages:
+            return None
+        volumes = self._volumes(sid)
+        if volname in volumes:
+            return True
+        kind = volname.split('/', 1)[0]
+        return False if any(name.split('/', 1)[0] == kind and '/' in name for name in volumes) else None
+
     def _find_volume(self, sid, volname):
         return self._volumes(sid).get(volname)
 

@@ -21,6 +21,7 @@ import time
 
 from . import schema as pve_schema
 from .model import PveError, TaskError
+from .routing import StatefulRoutes, param_error
 
 __all__ = ['FakeCt', 'LxcApi']
 
@@ -258,7 +259,7 @@ class FakeCt(object):
         return out
 
 
-class LxcApi(object):
+class LxcApi(StatefulRoutes):
     """Mixin for FakePve: the containers and their routes."""
 
     def __init__(self, *args, **kwargs):
@@ -269,6 +270,22 @@ class LxcApi(object):
         self.ct_secs = dict.fromkeys(('create', 'clone', 'destroy', 'snapshot', 'delsnapshot', 'rollback',
                                       'template', 'resize', 'migrate'), 0)
         self._ct_pids = itertools.count(2000)
+
+    def _routes_cluster(self):
+        return [('GET', '/cluster/nextid', self._nextid)]
+
+    async def _nextid(self, v, user):
+        """Cluster.pm nextid: the first free id among VMs and containers, or the asked one if it is free."""
+        if v.get('vmid') not in (None, ''):
+            if self.guest(int(v['vmid'])):
+                raise param_error(vmid='VM {0} already exists'.format(v['vmid']))
+            return v['vmid']
+        lower, upper = 100, 1000 * 1000
+        taken = set(vm.vmid for vm in self.vms) | set(ct.vmid for ct in self.cts)
+        for vmid in range(lower, upper):
+            if vmid not in taken:
+                return vmid
+        raise PveError(500, 'unable to get any free VMID in range [{0}, {1}]'.format(lower, upper))
 
     # ----------------------------------------------------------- lookup
 
@@ -282,7 +299,7 @@ class LxcApi(object):
         self.cts.append(ct)
         self.nodes.setdefault(ct.node, {'online': True})
         if ct.pool:
-            self.pools.setdefault(ct.pool, set()).add(ct.vmid)
+            self._pool_join(ct.pool, ct.vmid)
         if ct.status == 'running':
             ct.pid = next(self._ct_pids)
         return ct
@@ -297,14 +314,6 @@ class LxcApi(object):
     def guest(self, vmid):
         """The VM or container with this id, or None."""
         return self.vm(vmid) or self.ct(vmid)
-
-    def volume_exists(self, volid):
-        """True or False if the fake knows whether a volume (an OS template) is in its storage, else None.
-
-        Container creation fails in its task for a template that is known to be missing. Replace this to
-        model storage content; the default knows nothing and so accepts every template.
-        """
-        return None
 
     def ct_resources(self, user, kind=None):
         """The containers as /cluster/resources lists them."""
@@ -344,11 +353,6 @@ class LxcApi(object):
         if ct is None or ct.node != node:
             raise PveError(500, "Configuration file 'nodes/{0}/lxc/{1}.conf' does not exist".format(node, vmid))
         return ct
-
-    def _pool_leave(self, vmid):
-        for ids in self.pools.values():
-            if isinstance(ids, set):
-                ids.discard(vmid)
 
     def _drop(self, ct):
         if ct in self.cts:
@@ -545,7 +549,7 @@ class LxcApi(object):
                 out.update(mount['volume'] for _, mount in ct.volumes(cfg))
         return out
 
-    def _volume_name(self, vmid, sid, n):
+    def _ct_volume_name(self, vmid, sid, n):
         kind = self.storages.get(sid, {}).get('type', 'dir')
         if kind == 'zfspool':
             return 'subvol-{0}-disk-{1}'.format(vmid, n)
@@ -556,7 +560,7 @@ class LxcApi(object):
     def _allocate(self, vmid, sid, taken):
         """A new volume id for the container on the storage."""
         for n in itertools.count():
-            volid = '{0}:{1}'.format(sid, self._volume_name(vmid, sid, n))
+            volid = '{0}:{1}'.format(sid, self._ct_volume_name(vmid, sid, n))
             if volid not in taken:
                 taken.add(volid)
                 return volid
@@ -825,7 +829,7 @@ class LxcApi(object):
         # create_and_lock_config: the container exists, locked, before the task starts.
         if same and restore and force:
             self._drop(existing)
-        ct = FakeCt(vmid, node=node, defaults=False, pool=pool, config={'lock': 'create'})
+        ct = FakeCt(vmid, node=node, defaults=False, config={'lock': 'create'})
         self.cts.append(ct)
         taken = self._taken_volumes()
         final = dict(conf)
@@ -851,7 +855,7 @@ class LxcApi(object):
                 self._drop(ct)
                 raise TaskError('{0} {1}'.format(emsg, e)) from e
             if pool:
-                self.pools.setdefault(pool, set()).add(vmid)
+                self._pool_join(pool, vmid)
             if v.get('start'):
                 await self._start_steps(ct, user)
             if v.get('ha-managed'):
@@ -1313,8 +1317,7 @@ class LxcApi(object):
                     new.config[opt] = print_mount(mount, opt == 'rootfs')
                 await self.ceph_io(new, list(mounts))
                 if pool:
-                    self.pools.setdefault(pool, set()).add(newid)
-                    new.pool = pool
+                    self._pool_join(pool, newid)
                 new.lock = None
                 if target:
                     new.node = target

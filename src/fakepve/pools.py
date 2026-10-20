@@ -2,8 +2,8 @@
 
 Follows pve-manager's PVE/API2/Pool.pm. `pve.pools` maps a pool id to the set of
 guest ids in it (a guest is in one pool); `pve.pool_info` holds the comment and
-the storage members. Guests are anything with a `vmid` in `pve.vms` (or a
-`pve.cts` list, for containers).
+the storage members. Guests are the VMs in `pve.vms` and the containers in
+`pve.cts`; lxc.py joins and leaves through `_pool_join` and `_pool_leave`.
 """
 
 import copy
@@ -35,6 +35,18 @@ class PoolsApi(StatefulRoutes):
                 return name
         return None
 
+    def _pool_join(self, name, vmid):
+        """Add a guest (VM or container) to a pool, creating the pool record if only the id exists."""
+        self.pools.setdefault(name, set()).add(vmid)
+        self._pool_meta(name)
+        self._sync_pools()
+
+    def _pool_leave(self, vmid):
+        """Remove a guest id from every pool (a guest is destroyed)."""
+        for ids in self.pools.values():
+            ids.discard(vmid)
+        self._sync_pools()
+
     def _pool_of_storage(self, sid):
         """The pool a storage id is a member of, or None."""
         for name, meta in sorted(self.pool_info.items()):
@@ -44,11 +56,11 @@ class PoolsApi(StatefulRoutes):
 
     def _sync_pools(self):
         """Keep each guest's `pool` attribute (shown in /cluster/resources) in step with membership."""
-        for guest in list(self.vms) + list(getattr(self, 'cts', [])):
+        for guest in list(self.vms) + self.cts:
             guest.pool = self._pool_of_vm(guest.vmid)
 
     def _guest_of(self, vmid):
-        for guest in list(self.vms) + list(getattr(self, 'cts', [])):
+        for guest in list(self.vms) + self.cts:
             if guest.vmid == vmid:
                 return guest
         return None
