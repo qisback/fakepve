@@ -47,3 +47,29 @@ The build is plain static files in `site/`, so a fork can publish it anywhere:
 - **Any static host:** copy `site/` to the web root, for example `rsync -a --delete site/ host:/var/www/fakepve/`.
 
 Set `site_url` in `properdocs.yml` to the address the site is served from, so that links and the search index resolve.
+
+## Releasing
+
+A release is a version in `pyproject.toml`, a section in `CHANGELOG.md` and an annotated tag `vX.Y.Z`. Day-to-day changes add a line under `## [Unreleased]` in `CHANGELOG.md` (Keep a Changelog headings: Added, Changed, Deprecated, Removed, Fixed, Security). The version follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) and lives only in `pyproject.toml`; `fakepve.__version__` and `fakepve --version` read it from the installed package.
+
+1. On the branch to release, run `python tools/release.py X.Y.Z`. It renames `[Unreleased]` to `[X.Y.Z] - <today>`, starts a new empty `[Unreleased]`, bumps `pyproject.toml`, updates the compare links at the end of the changelog and prints the release notes. (`--date YYYY-MM-DD` overrides the date. `python tools/release.py --notes X.Y.Z` prints an existing version's notes again, and `--check vX.Y.Z` is what the release workflow uses to compare the tag with the version and the changelog.)
+2. Commit the two files (`docs: release X.Y.Z`) and merge them to `main`.
+3. Tag that commit with an annotated tag: `git tag -a vX.Y.Z -m "fakepve X.Y.Z"`, as the project owner.
+4. Publish `main` and the tag to GitHub with the publishing script (`publish_github.py`). Pushing the tag starts `.github/workflows/release.yml`; nothing else is needed.
+
+The workflow, on a pushed `v*` tag:
+
+- **build** checks that the tag equals the version and that the changelog has the section, builds the sdist and wheel, runs `twine check`, installs the wheel in a clean virtual environment and runs the test suite against it, and keeps `dist/` as an artefact.
+- **pypi** (after build) uploads `dist/` to PyPI by trusted publishing, in the `pypi` environment. There is no token.
+- **image** (after build) builds the container image, runs `tools/smoke_image.sh` on it (start, wait for it to answer, log in, list the VMs), and pushes `ghcr.io/qisback/fakepve:X.Y.Z` and `:latest`, labelled with the source, version and revision.
+- **release** (after build and image) creates the GitHub release for the tag with `dist/*` attached and the changelog section as its notes.
+
+The same container build and smoke test run on every pull request and push in `ci.yml`, together with a `python -m build` and `twine check`, so a release is not the first time they run. Release branches (`release/**`) are tested there too.
+
+### One-off PyPI setup
+
+Done once, by the owner, before the first release:
+
+1. On pypi.org, add a pending trusted publisher (Account settings, Publishing): PyPI project name `fakepve`, owner `qisback`, repository `fakepve`, workflow `release.yml`, environment `pypi`. The project is created by the first upload; there is no API token to make or store.
+2. On GitHub, in the repository's Settings, Environments, create `pypi` and restrict its deployment to tags matching `v*` (Deployment branches and tags, Selected branches and tags, add a tag rule `v*`). Required reviewers may be added if a pause before each upload is wanted.
+3. After the first release, make the `ghcr.io/qisback/fakepve` package public (Packages, the package's settings, Change visibility), so that `docker pull` needs no login. It is linked to the repository by the image's source label.

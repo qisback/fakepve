@@ -38,7 +38,7 @@ def test_ci_tools_are_pinned_exactly():
     names = [line.split('==')[0] for line in pins.splitlines() if line and not line.startswith('#')]
     assert {'ruff', 'pytest', 'pytest-asyncio', 'requests', 'PyYAML', 'aiohttp', 'cryptography'} <= set(names)
     assert all('==' in line for line in pins.splitlines() if line and not line.startswith('#'))
-    for workflow in ('ci.yml', 'pages.yml'):
+    for workflow in ("ci.yml", "pages.yml", "release.yml"):
         text = read('.github', 'workflows', workflow)
         for line in re.findall(r'^\s*run: .*pip install.*$', text, flags=re.M):
             assert '-c .github/ci-constraints.txt' in line, line
@@ -58,3 +58,29 @@ def test_actions_are_pinned_to_commits():
 def test_base_image_is_pinned_by_digest():
     froms = re.findall(r'^FROM\s+(\S+)', read('Dockerfile'), flags=re.M)
     assert froms and all(re.search(r'@sha256:[0-9a-f]{64}$', f) for f in froms)
+
+
+def test_release_workflow_is_least_privilege_and_ordered():
+    import yaml
+    flow = yaml.safe_load(read('.github', 'workflows', 'release.yml'))
+    assert flow[True] == {'push': {'tags': ['v*']}}  # YAML reads the key "on" as True
+    assert flow['permissions'] == {'contents': 'read'}
+    jobs = flow['jobs']
+    assert set(jobs) == {'build', 'pypi', 'image', 'release'}
+    assert jobs['pypi']['needs'] == 'build' and jobs['pypi']['environment'] == 'pypi'
+    assert jobs['pypi']['permissions'] == {'id-token': 'write'}
+    assert jobs['image']['permissions'] == {'contents': 'read', 'packages': 'write'}
+    assert set(jobs['release']['needs']) == {'build', 'image'}
+    assert jobs['release']['permissions'] == {'contents': 'write'}
+    for job in jobs.values():
+        for step in job['steps']:
+            # Event data reaches scripts through env, never by expansion into the script.
+            assert '${{' not in step.get('run', ''), step
+            if step.get('uses', '').startswith('actions/checkout'):
+                assert step['with']['persist-credentials'] is False
+
+
+def test_ci_builds_the_image_and_tests_release_branches():
+    text = read('.github', 'workflows', 'ci.yml')
+    assert "'release/**'" in text
+    assert 'tools/smoke_image.sh' in text and 'tools/smoke_image.sh' in read('.github', 'workflows', 'release.yml')

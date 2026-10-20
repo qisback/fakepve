@@ -1,0 +1,126 @@
+# GitHub copy only. Runs when a tag vX.Y.Z is pushed (the forge publishes tags with publish_github.py).
+# build: check the tag, build sdist and wheel, test the wheel. pypi, image and release follow from it.
+name: release
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: tag matches the version and the changelog
+        env:
+          TAG: ${{ github.ref_name }}
+        run: python tools/release.py --check "$TAG"
+      - name: install build tools
+        run: python -m pip install -c .github/ci-constraints.txt build twine
+      - name: build
+        run: python -m build
+      - name: twine check
+        run: python -m twine check --strict dist/*
+      - name: install the wheel in a clean venv
+        run: |
+          python -m venv "$RUNNER_TEMP/wheel-venv"
+          wheel="$(ls dist/*.whl)"
+          "$RUNNER_TEMP/wheel-venv/bin/python" -m pip install -c .github/ci-constraints.txt "$wheel[test]" requests pyyaml
+      - name: tests against the wheel
+        run: |
+          py="$RUNNER_TEMP/wheel-venv/bin/python"
+          # The tests import the installed wheel, not src/.
+          "$py" -c "import fakepve; assert 'site-packages' in fakepve.__file__, fakepve.__file__; print(fakepve.__file__)"
+          "$py" -m pytest -q -p no:cacheprovider
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+
+  image:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/qisback/fakepve
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: build
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          docker build \
+            --label org.opencontainers.image.title=fakepve \
+            --label "org.opencontainers.image.description=A lightweight fake Proxmox VE API for testing Proxmox clients" \
+            --label org.opencontainers.image.source=https://github.com/qisback/fakepve \
+            --label org.opencontainers.image.url=https://qisback.github.io/fakepve/ \
+            --label org.opencontainers.image.licenses=AGPL-3.0-or-later \
+            --label "org.opencontainers.image.version=$version" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            -t "$IMAGE:$version" -t "$IMAGE:latest" .
+      - name: smoke test
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          EXPECT_VERSION="$version" sh tools/smoke_image.sh "$IMAGE:$version"
+      - name: log in to ghcr.io
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: push
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          docker push "$IMAGE:$version"
+          docker push "$IMAGE:latest"
+
+  release:
+    needs: [build, image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - name: create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          python3 tools/release.py --notes "$version" > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" dist/* --verify-tag --title "fakepve $version" --notes-file "$RUNNER_TEMP/notes.md"
