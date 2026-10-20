@@ -177,6 +177,24 @@ For a new PVE release:
 4. **Tests.** Run the test suite. The coverage test sends a valid request to every method in the schema and checks the answer against its `returns`; the catalogue tests check names, placeholders and triggering.
 5. **Docs.** Regenerate the derived documentation (below) and commit it with the data: the endpoint reference and the signature index change with the schema, and the output blocks in [Scenarios](scenarios.md) may change with the catalogue.
 
+## Checking against a real PVE
+
+`tools/compare_real.py` (standard library and aiohttp only) finds where the fake's answers differ in shape from a real PVE's. It is read-only: the client has one request method and refuses anything but `GET` before a request is built.
+
+1. **Record.** Create an API token for a user with the `PVEAuditor` role (privilege separation off, or the role on the token as well) and put `user@realm!id=secret` in a file. Then run:
+
+   ```text
+   python tools/compare_real.py record --url https://pve.example.org:8006 --token-file ~/pve.token --cafile ca.pem --out shape.json
+   ```
+
+   Use `--insecure` instead of `--cafile` for a self-signed certificate. The token is read from the file only; it is not an argument, is never printed or logged, and the tool refuses to write a file that contains it. The walk takes every `GET` method of the schema, finds real values for path parameters through the list endpoints (`/nodes`, `/nodes/{node}/qemu`, `/storage`, `/pools`, ...), and sends at most `--per-param` (2) requests per method and `--max-requests` (1500) in all, `--concurrency` (4) at a time, each within `--timeout` seconds. It does not send the console and websocket methods (`vncproxy`, `termproxy`, `spiceproxy`, `vncwebsocket`), downloads (`aplinfo`, `file-restore`), network scans and URL probes, the guest agent, `report`, methods with required query parameters, or `rrd` and `rrddata` (add `--include-rrd`). The skips are listed in the output and in the file.
+
+2. **Keep only shapes.** The shape file holds, per method, the HTTP status, the types of the answer and its key names, and the text of any error with every word the schema does not know, every name and every number replaced by `<x>`. Keys the schema does not name (a VM name used as a key) become `<key>`. There are no names, addresses, identifiers or paths, and a self-check rejects a file where a string value, an unknown key or an unexpected field would get in. The file also holds counts of nodes, VMs, containers, storages and pools, to seed the fake.
+
+3. **Diff.** `python tools/compare_real.py diff shape.json` starts a fake in-process with those counts (it needs the `crypto` extra), records it the same way and lists, per method, status differences, keys missing from the fake, extra keys and type differences. `--against other.json` compares two shape files instead. The exit status is 0 unless `--strict` is given and a difference was found. `python tools/compare_real.py --self-test` records a fake and diffs it against itself.
+
+Limits: only reads are covered, so writes, tasks and most error paths need a disposable PVE (a later phase). A token with a narrow role gets `403` for some methods, which shows as a status difference. Keys the real PVE returns but the schema does not document are folded into `<key>`, so they do not show as missing keys.
+
 ## Tests
 
 `tests/` holds, besides the unit tests of the fake:
@@ -184,6 +202,7 @@ For a new PVE release:
 - `test_schema_api.py`: every method of the schema answers, and the answer matches `returns`; validation and permission behaviour of the generic handler.
 - `test_error_catalogue.py`: the catalogue, `errors_for`, triggering by name, in-task errors.
 - `test_scenarios.py` and `test_smoke.py`: the stateful behaviour and the scenarios.
+- `test_compare_real.py`: the comparison tool (above): sanitiser, GET-only guard, token handling, skip list, diff.
 - `test_docs.py`: the documentation (below). `test_examples.py`: the examples run.
 
 Lint with `ruff check .` and run `pytest` from the repository root, with `src` on the path (`PYTHONPATH=src`) when the package is not installed.
