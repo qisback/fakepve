@@ -49,16 +49,16 @@ def test_sanitiser_rejects_a_leaked_string_value(tool, vocab):
 
 
 def test_shape_keeps_types_and_drops_values_and_odd_keys(tool, vocab):
-    data = {'web01': {'name': 'web01', 'ip': '192.0.2.7', 'cpu': 0.5, 'template': 1, 'up': True},
-            'db02': {'name': 'db02', 'ip': None}}
+    data = {'web01': {'name': 'web01', 'ip': '192.0.2.7', 'cpu': 0.5, 'template': 1, 'lock': None},
+            'db02': {'name': 'db02', 'lock': 'backup'}}
     shaped = tool.shape(data, vocab.known)
     text = json.dumps(shaped)
     for leaked in ('web01', 'db02', '192.0.2.7', '0.5'):
         assert leaked not in text
     assert list(shaped['keys']) == ['<key>']
     inner = shaped['keys']['<key>']
-    assert inner['keys']['template'] == {'t': 'integer'} and inner['keys']['up'] == {'t': 'boolean'}
-    assert inner['keys']['ip']['nullable'] is True
+    assert inner['keys']['template'] == {'t': 'integer'} and inner['keys']['<key>'] == {'t': 'string'}
+    assert inner['keys']['lock'] == {'t': 'string', 'nullable': True}
     tool.check_shape(shaped, vocab)
 
 
@@ -71,10 +71,10 @@ def test_error_templates_carry_no_names_or_numbers(tool, vocab):
 
 def test_dump_refuses_a_document_with_an_error_value_or_a_credential(tool, vocab):
     doc = {'format': 1, 'skipped': [], 'inventory': {'node': 1},
-           'endpoints': {'GET /version': {'status': 500, 'errors': [{'status': 500, 'error': 'node web01 is down'}]}}}
+           'endpoints': {'GET /version': {'status': 500, 'errors': [{'status': 500, 'error': 'node web01 does not exist'}]}}}
     with pytest.raises(tool.Leak):
         tool.dump(doc, vocab)
-    doc['endpoints']['GET /version']['errors'][0]['error'] = 'node <x> is down'
+    doc['endpoints']['GET /version']['errors'][0]['error'] = 'node <x> does not exist'
     assert tool.dump(doc, vocab)
     with pytest.raises(tool.Leak):
         tool.dump(doc, vocab, ['node'])
@@ -131,7 +131,7 @@ async def test_the_request_cap_and_the_param_limit_hold(tool):
     async with tool.Fake({'node': 1, 'qemu': 5}) as fake:
         async with tool.Client(fake.pve.url, tool.Fake.TOKEN, tls=False) as client:
             await tool.record(client, per_param=1)
-        vmids = {p.split('/')[6] for _, p, _ in fake.pve.requests if '/qemu/' in p and len(p.split('/')) > 6}
+        vmids = {p.split('/')[6] for _, p, _ in fake.pve.requests if p.startswith('/api2/json/nodes/pve1/qemu/')}
         assert len(vmids) == 1
 
 

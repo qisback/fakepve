@@ -315,8 +315,9 @@ class Client(object):
 
     async def __aenter__(self):
         self.slots = asyncio.Semaphore(self.concurrency)
+        tls = self.tls if self.tls is not None else ssl.create_default_context()
         self.session = aiohttp.ClientSession(
-            connector=aiohttp.TCPConnector(ssl=self.tls if self.tls is not None else ssl.create_default_context(), limit=self.concurrency),
+            connector=aiohttp.TCPConnector(ssl=tls, limit=self.concurrency),
             timeout=aiohttp.ClientTimeout(total=self.timeout), headers={'Authorization': 'PVEAPIToken=' + self.token})
         return self
 
@@ -482,6 +483,8 @@ class Walker(object):
         inv = {}
         for kind in ('node', 'qemu', 'lxc', 'pool'):
             inv[kind] = sum(1 for i in items if i.get('type') == kind)
+        pools = [r for _, r in self.results.get('/pools', []) if 200 <= r.status < 300]
+        inv['pool'] = len(pools[0].data) if pools and isinstance(pools[0].data, list) else 0
         inv['storage'] = len(set(i.get('storage') for i in items if i.get('type') == 'storage'))
         return inv
 
@@ -647,10 +650,10 @@ async def self_test(write=print):
 # ------------------------------------------------------------------------ CLI
 
 def parser():
-    ap = argparse.ArgumentParser(description='Compare fakepve with a real PVE, read-only, keeping only shapes.')
+    ap = argparse.ArgumentParser(allow_abbrev=False, description='Compare fakepve with a real PVE, read-only, keeping only shapes.')
     ap.add_argument('--self-test', action='store_true', help='record an in-process fakepve and diff it against itself')
     sub = ap.add_subparsers(dest='mode')
-    rec = sub.add_parser('record', help='walk the GET methods of a PVE and write a shape file')
+    rec = sub.add_parser('record', allow_abbrev=False, help='walk the GET methods of a PVE and write a shape file')
     rec.add_argument('--url', required=True, help='https://host:8006')
     rec.add_argument('--token-file', required=True, help='file holding user@realm!id=secret')
     tls = rec.add_mutually_exclusive_group()
@@ -663,7 +666,7 @@ def parser():
     rec.add_argument('--timeout', type=float, default=20.0, help='seconds per request')
     rec.add_argument('--list-items', type=int, default=5, help='list items merged into one shape')
     rec.add_argument('--include-rrd', action='store_true')
-    dif = sub.add_parser('diff', help='compare a shape file with a seeded fakepve, or with another shape file')
+    dif = sub.add_parser('diff', allow_abbrev=False, help='compare a shape file with a seeded fakepve, or with another shape file')
     dif.add_argument('shape')
     dif.add_argument('--against', help='a second shape file instead of an in-process fakepve')
     dif.add_argument('--strict', action='store_true', help='exit 1 when there are differences')
