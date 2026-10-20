@@ -17,6 +17,10 @@ from .model import PveError
 NOT_TASKS = {('POST', '/cluster/sdn/lock'), ('POST', '/nodes/{node}/qemu/{vmid}/monitor')}
 
 
+# The URL prefixes the API answers under: PVE's JSON and ExtJS formats.
+FORMAT_PREFIXES = ('/api2/json', '/api2/extjs')
+
+
 def root_only(user):
     return user.split('!')[0] == 'root@pam'
 
@@ -26,7 +30,11 @@ class GenericApi(object):
 
     def resolve(self, request, prefix):
         """The schema match of a request path, or None."""
-        raw = request.rel_url.raw_path[len(prefix):]
+        path = request.rel_url.raw_path
+        for known in FORMAT_PREFIXES:
+            if path.startswith(known + '/'):
+                prefix = known
+        raw = path[len(prefix):]
         path = '/'.join(urllib.parse.unquote(seg) for seg in raw.split('/'))
         return pve_schema.load().match(path)
 

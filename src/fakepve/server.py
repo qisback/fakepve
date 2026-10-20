@@ -14,6 +14,7 @@ nodes, migrations, network and Ceph trouble, and more.
 
 import asyncio
 import hmac
+import http
 import itertools
 import json
 import logging
@@ -35,6 +36,9 @@ from .model import FakeVm, Model, PveError, TaskError
 PORT = 8006  # PVE's API port; clients often assume it
 _hostseq = itertools.count(2)
 API = '/api2/json'
+EXTJS = '/api2/extjs'
+# Both serve the same handlers; ExtJS wraps every answer in an envelope.
+FORMATS = (API, EXTJS)
 # Where the authenticated user is kept on the request.
 USER = web.RequestKey('user', str) if hasattr(web, 'RequestKey') else 'user'
 GENERIC = web.RequestKey('generic', object) if hasattr(web, 'RequestKey') else 'generic'
@@ -167,38 +171,40 @@ class FakePve(GenericApi, Model):
     # ------------------------------------------------------------- lifecycle
 
     def _build_app(self):
-        app = web.Application(middlewares=[self._middleware], client_max_size=self.client_max_size)
+        app = web.Application(middlewares=[self._extjs, self._middleware], client_max_size=self.client_max_size)
         r = app.router
-        r.add_post(API + '/access/ticket', self._ticket)
-        r.add_put(API + '/access/password', self._password)
-        r.add_get(API + '/version', self._version)
-        r.add_get(API + '/nodes', self._nodes)
-        r.add_get(API + '/cluster/resources', self._resources)
-        r.add_get(API + '/cluster/status', self._cluster_status)
-        r.add_get(API + '/cluster/ceph/status', self._ceph_status)
-        node = API + '/nodes/{node}'
-        r.add_get(node + '/tasks', self._task_list)
-        r.add_get(node + '/tasks/{upid}/status', self._task_status)
-        r.add_get(node + '/tasks/{upid}/log', self._task_log)
-        r.add_get(node + '/storage', self._storage_list)
-        r.add_get(node + '/storage/{storage}/content', self._storage_content)
-        r.add_post(node + '/storage/{storage}/download-url', self._download_url)
-        r.add_post(node + '/storage/{storage}/upload', self._upload)
-        qemu = node + '/qemu/{vmid}'
-        r.add_get(qemu + '/status/current', self._status_current)
-        r.add_post(qemu + '/status/{action}', self._status_action)
-        r.add_get(qemu + '/config', self._config_get)
-        r.add_put(qemu + '/config', self._config_put)
-        r.add_post(qemu + '/config', self._config_post)
-        r.add_get(qemu + '/pending', self._pending)
-        r.add_post(qemu + '/termproxy', self._termproxy)
-        r.add_post(qemu + '/vncproxy', self._vncproxy)
-        r.add_get(qemu + '/vncwebsocket', self._vncwebsocket)
-        r.add_get(qemu + '/agent/{command}', self._agent)
-        r.add_post(qemu + '/agent/{command}', self._agent)
-        r.add_post(qemu + '/monitor', self._monitor)
+        for p in FORMATS:
+            r.add_post(p + '/access/ticket', self._ticket)
+            r.add_put(p + '/access/password', self._password)
+            r.add_get(p + '/version', self._version)
+            r.add_get(p + '/nodes', self._nodes)
+            r.add_get(p + '/cluster/resources', self._resources)
+            r.add_get(p + '/cluster/status', self._cluster_status)
+            r.add_get(p + '/cluster/ceph/status', self._ceph_status)
+            node = p + '/nodes/{node}'
+            r.add_get(node + '/tasks', self._task_list)
+            r.add_get(node + '/tasks/{upid}/status', self._task_status)
+            r.add_get(node + '/tasks/{upid}/log', self._task_log)
+            r.add_get(node + '/storage', self._storage_list)
+            r.add_get(node + '/storage/{storage}/content', self._storage_content)
+            r.add_post(node + '/storage/{storage}/download-url', self._download_url)
+            r.add_post(node + '/storage/{storage}/upload', self._upload)
+            qemu = node + '/qemu/{vmid}'
+            r.add_get(qemu + '/status/current', self._status_current)
+            r.add_post(qemu + '/status/{action}', self._status_action)
+            r.add_get(qemu + '/config', self._config_get)
+            r.add_put(qemu + '/config', self._config_put)
+            r.add_post(qemu + '/config', self._config_post)
+            r.add_get(qemu + '/pending', self._pending)
+            r.add_post(qemu + '/termproxy', self._termproxy)
+            r.add_post(qemu + '/vncproxy', self._vncproxy)
+            r.add_get(qemu + '/vncwebsocket', self._vncwebsocket)
+            r.add_get(qemu + '/agent/{command}', self._agent)
+            r.add_post(qemu + '/agent/{command}', self._agent)
+            r.add_post(qemu + '/monitor', self._monitor)
         # Last, so the routes above keep priority: the rest of the schema.
-        r.add_route('*', API + '/{tail:.*}', self._generic)
+        for p in FORMATS:
+            r.add_route('*', p + '/{tail:.*}', self._generic)
         return app
 
     async def start(self, certfile, keyfile):
@@ -222,6 +228,33 @@ class FakePve(GenericApi, Model):
             self.runner = None
 
     # ------------------------------------------------------------ middleware
+
+    @web.middleware
+    async def _extjs(self, request, handler):
+        """Under /api2/extjs: the same answer in the envelope PVE's web UI reads.
+
+        HTTP 200 whatever happened; `success` is 0 for an error or per-field `errors`, and the
+        status and message go in the body (PVE::APIServer::Formatter::Standard).
+        """
+        if not request.path.startswith(EXTJS + '/'):
+            return await handler(request)
+        try:
+            response = await handler(request)
+        except web.HTTPException as exc:
+            response = error(exc.status, exc.reason)
+        if not isinstance(response, web.Response) or response.content_type != 'application/json':
+            return response
+        body = json.loads(response.text)
+        out = {'data': body.get('data'), 'success': 1}
+        if body.get('errors'):
+            out.update(errors=body['errors'], success=0)
+        if response.status >= 400:
+            out.update(message=body.get('message') or http.HTTPStatus(response.status).phrase,
+                       status=response.status, success=0)
+        wrapped = web.json_response(out)
+        if response.keep_alive is False:
+            wrapped.force_close()
+        return wrapped
 
     @web.middleware
     async def _middleware(self, request, handler):
@@ -342,7 +375,7 @@ class FakePve(GenericApi, Model):
         return await self.task(node, errors.task_type(match.template), match.params.get('vmid', ''), user, body)
 
     def _authenticate(self, request):
-        if request.path == API + '/access/ticket':
+        if request.path in (p + '/access/ticket' for p in FORMATS):
             return None
         auth = request.headers.get('Authorization', '')
         if auth.startswith('PVEAPIToken='):

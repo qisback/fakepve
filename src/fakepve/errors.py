@@ -49,8 +49,9 @@ def meta():
 
 def strip_prefix(path):
     path = path.split('?', 1)[0]
-    if path.startswith(API):
-        path = path[len(API):]
+    for prefix in (API, '/api2/extjs'):
+        if path == prefix or path.startswith(prefix + '/'):
+            return path[len(prefix):]
     return path
 
 
