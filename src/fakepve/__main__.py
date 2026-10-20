@@ -46,6 +46,15 @@ async def serve(args):
     with open(args.guests) as guestfile:
         guests = json.load(guestfile)['guests']
     for guest in guests:
+        if guest.get('type', 'qemu') == 'lxc':
+            ct = pve.add_ct(guest['vmid'], guest.get('name'), node=guest.get('node', 'pve1'),
+                            status=guest.get('status', 'stopped'), config=guest.get('config', {}),
+                            template=guest.get('template', False), lock=guest.get('lock'),
+                            ostemplate=guest.get('ostemplate'))
+            for key in ('shutdown_secs', 'start_secs', 'stop_secs', 'start_error', 'ha_state'):
+                if key in guest:
+                    setattr(ct, key, guest[key])
+            continue
         vm = pve.add_vm(guest['vmid'], guest['name'], node=guest.get('node', 'pve1'),
                         status=guest.get('status', 'stopped'), qmpstatus=guest.get('qmpstatus'),
                         config=guest.get('config', {}), template=guest.get('template', False),

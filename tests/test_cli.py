@@ -134,6 +134,19 @@ def test_guest_fields(cli, tmp_path):
     assert agent['data']['result'] == {'name': 'Debian'}
 
 
+def test_container_in_the_guests_file(cli, tmp_path):
+    path = tmp_path / 'guests.json'
+    path.write_text(json.dumps({'guests': [
+        {'type': 'lxc', 'vmid': 300, 'name': 'ct1', 'node': 'pve2', 'status': 'running', 'start_error': 'boom',
+         'ostemplate': 'alpine-3.19-default_20240207_amd64.tar.xz', 'config': {'memory': 256}}]}))
+    server = cli([str(path), '--time-scale', '0'])
+    _, auth = server.login()
+    _, body = server.call('/nodes/pve2/lxc/300/status/current', headers=auth)
+    assert body['data']['status'] == 'running' and body['data']['name'] == 'ct1'
+    _, config = server.call('/nodes/pve2/lxc/300/config', headers=auth)
+    assert config['data']['memory'] == 256 and config['data']['ostype'] == 'alpine'
+
+
 def test_own_certificate_with_key_in_the_same_file(cli, tmp_path):
     from fakepve.certs import make_cert
     certfile, keyfile, _ = make_cert(str(tmp_path))

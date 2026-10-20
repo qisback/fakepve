@@ -146,7 +146,7 @@ This is the shape of every test: build the cluster, break something, start the f
 
 ## The guests file
 
-The command line builds its VMs from a JSON file. The top level is an object with a `guests` list, one object per VM:
+The command line builds its VMs and containers from a JSON file. The top level is an object with a `guests` list, one object per guest:
 
 ```json
 {"guests": [
@@ -175,6 +175,7 @@ The command line builds its VMs from a JSON file. The top level is an object wit
 | `start_error` | string | none | The start task fails with this message (a missing disk, a bad device). |
 | `ha_state` | string | none | Makes the VM HA managed, with this state (`started`, `stopped`, `error`, ...). Start and stop then go through the HA manager. |
 | `agent` | object | none | What the guest agent answers: `{"os": {...}, "interfaces": [...]}`. Without it the agent is not running. |
+| `type` | string | `qemu` | `lxc` makes a container instead of a VM. A container takes `vmid`, `name` (its hostname), `node`, `status`, `config`, `template`, `lock`, `shutdown_secs`, `start_secs`, `stop_secs`, `start_error`, `ha_state` and `ostemplate` (a template file name, from which `ostype` and `arch` are worked out). The VM-only fields (`qmpstatus`, `acpi`, `agent`) are ignored. |
 
 Anything else in a guest object is ignored without a warning. Notably there is no `pool` field and no way to set `pending`: use Python for those. A guest without `vmid` or `name` stops the start-up with a `KeyError`. The loader can only set things on VMs; users, grants, tokens, failures and the cluster scenarios are Python only (see [CLI](cli.md#what-the-command-line-cannot-do)).
 
