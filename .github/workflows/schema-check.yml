@@ -1,0 +1,74 @@
+# GitHub copy only. Weekly: has the PVE API schema changed since the vendored one?
+name: schema-check
+on:
+  schedule:
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: github.repository == 'qisback/fakepve'
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.compare.outputs.changed }}
+      old: ${{ steps.compare.outputs.old }}
+      new: ${{ steps.compare.outputs.new }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+      - name: compare the hash of apidoc.js with the vendored one
+        id: compare
+        run: |
+          rc=0
+          python tools/check_schema.py > check.txt || rc=$?
+          cat check.txt
+          if [ "$rc" = 0 ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          elif [ "$rc" = 1 ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "old=$(sed -n 's/^old: //p' check.txt)" >> "$GITHUB_OUTPUT"
+            echo "new=$(sed -n 's/^new: //p' check.txt)" >> "$GITHUB_OUTPUT"
+          else
+            exit "$rc"
+          fi
+
+  report:
+    needs: check
+    if: needs.check.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: open an issue, once per new hash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          OLD_HASH: ${{ needs.check.outputs.old }}
+          NEW_HASH: ${{ needs.check.outputs.new }}
+        run: |
+          case "$OLD_HASH$NEW_HASH" in
+            *[!0-9a-f]*) echo "unexpected hash"; exit 1 ;;
+          esac
+          title="PVE API schema changed (apidoc.js $(printf '%.12s' "$NEW_HASH"))"
+          existing="$(gh issue list --state open --limit 100 --json title --jq '.[].title' | grep -cFx -- "$title" || true)"
+          if [ "$existing" != 0 ]; then
+            echo "an open issue already has the title: $title"
+            exit 0
+          fi
+          {
+            echo "The PVE API viewer's apidoc.js no longer matches the schema fakepve ships."
+            echo
+            echo "- vendored sha256: $OLD_HASH"
+            echo "- online sha256: $NEW_HASH"
+            echo
+            echo "To adopt it: run tools/fetch_schema.py, regenerate the docs with tools/gen_docs.py, check the"
+            echo "error catalogue (tools/extract_errors.py), and run the tests."
+          } > body.md
+          gh issue create --title "$title" --body-file body.md
