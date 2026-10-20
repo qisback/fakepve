@@ -54,6 +54,7 @@ nav:
   - Getting started: getting-started.md
   - Command line: cli.md
   - Python API: python-api.md
+  - pytest: pytest.md
   - Scenarios: scenarios.md
   - Errors: errors.md
   - CI: ci.md

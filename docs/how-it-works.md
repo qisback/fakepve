@@ -22,10 +22,11 @@ It stays one Python process on aiohttp. No PVE, QEMU, Ceph or corosync is run, a
 | `fakepve/generic.py` | `GenericApi`, a mixin of `FakePve`: the catch-all route, which checks parameters and permissions against the schema and builds answers. |
 | `fakepve/schema.py` | The schema: path matching, parameter validation with PVE's wording, sample values for `returns`. |
 | `fakepve/errors.py` | The error catalogue: lookup by name, cross-cutting errors, placeholder filling. |
-| `fakepve/certs.py` | The self-signed certificate. |
+| `fakepve/certs.py` | The self-signed certificate, with `localhost`, `127.0.0.1` and the listening address as subject alternative names. |
+| `fakepve/pytest_plugin.py` | The pytest fixtures `fakepve`, `fakepve_session`, `fakepve_url` and `fakepve_cafile`, registered through the `pytest11` entry point. |
 | `fakepve/__main__.py` | The command line. |
 | `fakepve/data/` | The vendored PVE data: schema and error catalogue. |
-| `tools/` | Scripts that refresh the data, generate the reference docs, run the docs' code, and take the screenshots. |
+| `tools/` | Scripts that refresh the data, generate the reference docs, run the docs' code, take the screenshots, cut releases (`release.py`) and smoke-test the container image (`smoke_image.sh`). |
 
 ## A request's path
 

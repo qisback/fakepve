@@ -15,8 +15,8 @@ A real cluster is slow to build, hard to break on purpose and impossible to shar
 ## Quick start
 
 ```console
-pip install '.[crypto]'
-python -m fakepve examples/guests.json --time-scale 0
+pip install 'fakepve[crypto]'
+fakepve examples/guests.json --time-scale 0
 fakepve listening on https://127.0.0.2:8006
 ```
 
@@ -27,7 +27,21 @@ $ curl -sk -d username=root@pam -d password=secret https://127.0.0.2:8006/api2/j
 {"data": {"ticket": "PVE:root@pam:...", "CSRFPreventionToken": "...", "username": "root@pam", "cap": {}}}
 ```
 
-From a test, in the same process:
+From pytest, with the plugin (`pip install 'fakepve[pytest]'`; see [pytest](docs/pytest.md)): the `fakepve` fixture is a started fake with a certificate your client can verify, and works with xdist.
+
+```python
+import requests
+
+def test_vms(fakepve, fakepve_url, fakepve_cafile):
+    fakepve.add_vm(100, 'vm1', status='running')
+    ticket = requests.post(fakepve_url + '/api2/json/access/ticket', verify=fakepve_cafile,
+                           data={'username': 'root@pam', 'password': 'secret'}).json()['data']['ticket']
+    vms = requests.get(fakepve_url + '/api2/json/cluster/resources?type=vm', verify=fakepve_cafile,
+                       cookies={'PVEAuthCookie': ticket}).json()['data']
+    assert [vm['name'] for vm in vms] == ['vm1']
+```
+
+Or in the same process, by hand:
 
 ```python
 from fakepve import FakePve
@@ -62,6 +76,7 @@ It is a fake, not a copy of PVE: outside the hand-written areas a write succeeds
 
 - [Getting started](docs/getting-started.md): install, first requests with curl, from Python, the guests file.
 - [Command line](docs/cli.md): every option and environment variable.
+- [pytest](docs/pytest.md): the fixtures.
 - [Python API](docs/python-api.md): every attribute and method of `FakePve` and `FakeVm`.
 - [Scenarios](docs/scenarios.md): a recipe for each fault, with the exact response the client sees.
 - [Errors](docs/errors.md): the catalogue, listing, triggering, placeholders, limits.
