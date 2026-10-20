@@ -193,7 +193,28 @@ For a new PVE release:
 
 3. **Diff.** `python tools/compare_real.py diff shape.json` starts a fake in-process with those counts (it needs the `crypto` extra), records it the same way and lists, per method, status differences, keys missing from the fake, extra keys and type differences. `--against other.json` compares two shape files instead. The exit status is 0 unless `--strict` is given and a difference was found. `python tools/compare_real.py --self-test` records a fake and diffs it against itself.
 
-Limits: only reads are covered, so writes, tasks and most error paths need a disposable PVE (a later phase). Keys the real PVE returns but the schema does not document are folded into `<key>`, so they are counted apart (`undocumented`) and not as missing keys.
+Limits: `record` and `diff` only cover reads; writes, tasks and error paths are the job of `scenario` (next section). Keys the real PVE returns but the schema does not document are folded into `<key>`, so they are counted apart (`undocumented`) and not as missing keys.
+
+### Phase 2: writes and error paths (`scenario`)
+
+`python tools/compare_real.py scenario` runs a list of steps that **write**, so it is only for a throwaway PVE 9 node: one you can destroy afterwards and that holds nothing you want. Never point it at a production node or at a cluster.
+
+```text
+python tools/compare_real.py scenario --url https://pve.example.org:8006 --token-file ~/pve.token --cafile ca.pem     --i-understand-this-writes --disposable-node pve --out scenario.json --against-fake
+```
+
+The token needs the rights to create, change and destroy guests, storages and pools (the `Administrator` role on `/`, privilege separation off). What it does:
+
+1. **Checks the target** before the first write: `--i-understand-this-writes` is given, `--disposable-node NAME` equals the only node of `/nodes` (a cluster, or two nodes, is refused), no guest exists that the tool did not create (`--allow-existing-guests` allows them, and the tool still never touches one), nothing holds an id from 9900 to 9999, and no object named `fpcmp-*` is left from an earlier run.
+2. **Runs the steps** of `STEPS` in `tools/compare_real.py` (data, one `step()` call each, easy to extend): storage add, update and delete for `fpcmp-dir`; VM create, config read and change (also bad enum, bad property string, out of range, unknown key, digest mismatch), start and stop (twice each, with `kvm: 0` so no nested KVM is needed), snapshots (create, list, name reuse, delete), clone, template conversion, start of a template, destroy while protected and while running; the same subset for a container, when the node can download an Alpine template from the appliance index (`/nodes/{node}/aplinfo`), else those steps are skipped with a note; pool create, add and remove a member, delete while it holds a member; firewall rule add, move and delete on the VM. A task a step starts is polled to its end.
+3. **Records per step** the HTTP status, the shape of the answer, the error text as a template (names, numbers, paths and ids replaced by `<x>`, only PVE's own words kept), the keys and templates of the per-field `errors`, and the exit status and last log line of the task as templates. The file holds no name, id, address, path or secret; a self-check refuses to write one, and the node name, the host name of the URL and the token are scanned for in the text.
+4. **Cleans up**, also when a step fails (`try/finally`): it removes protection, stops, deletes snapshots and destroys the guests it made, drops the pool and the storage, then lists again and fails if anything named `fpcmp-*` or in the reserved range is left. The directory the storage pointed at (`/var/lib/fpcmp-dir`) stays, because the API cannot remove it; destroy the node.
+
+The safety rules, all enforced in the client, not by convention: every write goes through a scope guard that only lets through the reserved vmids, the pool and storage names, the node given, and task ids it started, whatever a step says; a path with `..` or an empty part is refused; a volume in a parameter must be on `fpcmp-dir`. The token comes from a file and is never printed or written.
+
+`--against-fake` (alone with the live run, or with a scenario file: `scenario --against-fake scenario.json`) runs the same steps on an in-process fake that has one node and serves one Alpine template, and diffs step by step: HTTP status, error text (exact; a fuzzy match, the same words give or take a few, is counted apart and is not a difference), the keys of `errors`, the task outcome and, where the keys do not depend on the object, the shape. The summary gives the counts, then each difference is listed per step. `python tools/compare_real.py --self-test-scenario` runs the list on two fakes and expects no difference; the test suite runs it.
+
+To stand up a throwaway node: install PVE 9 on a VM or a cloud server (the official ISO, or Debian 13 with the Proxmox repository), with no other guests, create an API token for `root@pam` with privilege separation off, run the scenario, then destroy the VM or server. The node need not support nested KVM.
 
 ### Same rights, and what is not a defect
 
@@ -217,6 +238,7 @@ The generic answers close the systematic gaps in `src/fakepve/shapes.py`: `OPTIO
 - `test_error_catalogue.py`: the catalogue, `errors_for`, triggering by name, in-task errors.
 - `test_scenarios.py` and `test_smoke.py`: the stateful behaviour and the scenarios.
 - `test_compare_real.py` and `test_compare_privileges.py`: the comparison tool (above): sanitiser, GET-only guard, token handling, skip list, diff, the recorded privileges and the restricted user, the key filters.
+- `test_compare_scenario.py`: the write scenario: the safety guards, the scope guard, the clean-up on failure, the sanitiser, the token handling and the fake-against-fake test.
 - `test_shapes.py`: the keys and types the answers carry that a real PVE always sends.
 - `test_docs.py`: the documentation (below). `test_examples.py`: the examples run.
 
