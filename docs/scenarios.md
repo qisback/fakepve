@@ -711,8 +711,8 @@ async with fake() as (pve, api):
 
 <!-- output -->
 ```text
-200 {"data": {"exited": true, "exitcode": 0, "out-data": "", "err-data": ""}}
-('exec', {'command': ['-p']})
+200 {"data": {"exited": true, "exitcode": 0, "out-data": "up 2 hours", "err-data": ""}}
+('exec', {'command': ['uptime', '-p']})
 ```
 
 ## Pending changes
