@@ -30,10 +30,11 @@ from aiohttp import web
 from . import agent as guest_agent
 from . import errors
 from . import schema as pve_schema
+from . import shapes
 from .firewall import FirewallApi
 from .generic import GenericApi
-from .lxc import FakeCt, LxcApi
-from .model import FakeVm, Model, PveError, TaskError
+from .lxc import SIZE_UNITS, FakeCt, LxcApi
+from .model import DRIVE_PREFIXES, FakeVm, Model, PveError, TaskError
 from .pools import PoolsApi
 from .storage import StorageApi, StorageTransfer
 
@@ -193,6 +194,7 @@ class FakePve(StorageTransfer, StorageApi, PoolsApi, FirewallApi, GenericApi, Lx
             r.add_post(node + '/storage/{storage}/upload', self._upload)
             self._lxc_routes(r, node)
             qemu = node + '/qemu/{vmid}'
+            r.add_get(node + '/qemu', self._qemu_list)
             r.add_get(qemu + '/status/current', self._status_current)
             r.add_post(qemu + '/status/{action}', self._status_action)
             r.add_get(qemu + '/config', self._config_get)
@@ -401,6 +403,24 @@ class FakePve(StorageTransfer, StorageApi, PoolsApi, FirewallApi, GenericApi, Lx
 
     # --------------------------------------------------------------- access
 
+    def _routes_access(self):
+        return [('GET', '/access/permissions', self._permissions)]
+
+    async def _permissions(self, v, user):
+        """GET /access/permissions: {path: {privilege: 1}} the user (or token) holds; root holds all on /."""
+        who = v.get('userid') or user
+        if self.acl is None or who.split('!')[0] == 'root@pam':
+            held = {'/': set(shapes.PRIVILEGES)}
+        else:
+            held = {}
+            for name in dict.fromkeys((who, who.split('!')[0])):
+                for path, privs in self.acl.get(name, []):
+                    held.setdefault(path, set()).update(privs)
+        if v.get('path') is not None:
+            held = dict((p, ps) for p, ps in held.items()
+                        if v['path'] == p or p == '/' or v['path'].startswith(p + '/'))
+        return dict((path, dict.fromkeys(sorted(privs), 1)) for path, privs in sorted(held.items()))
+
     async def _ticket(self, request):
         p = await params(request)
         user, password = str(p.get('username', '')), p.get('password', '')
@@ -440,9 +460,45 @@ class FakePve(StorageTransfer, StorageApi, PoolsApi, FirewallApi, GenericApi, Lx
 
     # -------------------------------------------------------------- cluster
 
+    @staticmethod
+    def _node_stats(online):
+        """The usage fields of a node (an offline node has none)."""
+        if not online:
+            return {}
+        return {'cpu': 0.02, 'maxcpu': 4, 'mem': 2 * shapes.GiB, 'maxmem': 8 * shapes.GiB, 'disk': 4 * shapes.GiB,
+                'maxdisk': 64 * shapes.GiB, 'uptime': 3600}
+
     async def _nodes(self, request):
-        return ok([{'node': n, 'status': 'online' if s.get('online', True) else 'offline', 'type': 'node'}
-                   for n, s in sorted(self.nodes.items())])
+        data = []
+        for n, s in sorted(self.nodes.items()):
+            online = s.get('online', True)
+            item = {'node': n, 'id': 'node/' + n, 'status': 'online' if online else 'offline', 'type': 'node',
+                    'level': '', 'ssl_fingerprint': shapes.FINGERPRINT}
+            item.update(self._node_stats(online))
+            data.append(item)
+        return ok(data)
+
+    @staticmethod
+    def _vm_maxdisk(vm):
+        """Bytes of the first disk in the config, from its size= (0 when it has none)."""
+        for key in sorted(vm.config):
+            if key.startswith(DRIVE_PREFIXES) and key[-1].isdigit() and 'media=cdrom' not in str(vm.config[key]):
+                m = re.search(r'size=(\d+(?:\.\d+)?)([KMGT])?', str(vm.config[key]))
+                if m:
+                    return int(float(m.group(1)) * SIZE_UNITS.get(m.group(2) or 'G', 1))
+        return 0
+
+    def _vm_usage(self, vm):
+        """The usage fields /cluster/resources, the VM list and status/current share."""
+        running = vm.status == 'running'
+        mem = 67108864 if running else 0
+        data = {'cpu': 0.02 if running else 0, 'mem': mem, 'memhost': mem, 'disk': 0, 'diskread': 0, 'diskwrite': 0,
+                'netin': 0, 'netout': 0, 'maxdisk': self._vm_maxdisk(vm),
+                'maxmem': int(str(vm.config.get('memory', 512)).split('=')[-1]) * 1048576,
+                'maxcpu': int(vm.config.get('cores', 1)) * int(vm.config.get('sockets', 1)),
+                'uptime': int(time.time() - vm.started_at) if running and vm.started_at else 0}
+        data.update((k, v) for k, v in vm.stats.items() if k in data)
+        return data
 
     async def _resources(self, request):
         kind = request.query.get('type')
@@ -453,6 +509,9 @@ class FakePve(StorageTransfer, StorageApi, PoolsApi, FirewallApi, GenericApi, Lx
                 continue
             item = {'id': vm.guest, 'type': 'qemu', 'node': vm.node, 'name': vm.name, 'vmid': vm.vmid,
                     'status': vm.status if online else 'unknown', 'template': 1 if vm.template else 0}
+            item.update(self._vm_usage(vm))
+            if vm.config.get('tags'):
+                item['tags'] = vm.config['tags']
             if vm.lock:
                 item['lock'] = vm.lock
             if vm.pool:
@@ -463,8 +522,10 @@ class FakePve(StorageTransfer, StorageApi, PoolsApi, FirewallApi, GenericApi, Lx
         data += self.ct_resources(request[USER], kind)
         if kind in (None, 'node'):
             for name, state in sorted(self.nodes.items()):
-                data.append({'id': 'node/' + name, 'type': 'node', 'node': name,
-                             'status': 'online' if state.get('online', True) else 'offline'})
+                online = state.get('online', True)
+                data.append(dict({'id': 'node/' + name, 'type': 'node', 'node': name,
+                                  'status': 'online' if online else 'offline', 'level': ''},
+                                 **self._node_stats(online)))
         if kind in (None, 'storage'):
             for node in sorted(self.nodes):
                 data.extend(item for item in (self._storage_resource(node, name) for name in self.storages) if item)
@@ -475,7 +536,8 @@ class FakePve(StorageTransfer, StorageApi, PoolsApi, FirewallApi, GenericApi, Lx
         data = [{'type': 'cluster', 'id': 'cluster', 'name': self.cluster_name, 'nodes': len(self.nodes),
                  'quorate': 1 if self.quorate else 0, 'version': 1}]
         for idx, (name, state) in enumerate(sorted(self.nodes.items()), 1):
-            data.append({'type': 'node', 'id': 'node/' + name, 'name': name, 'nodeid': idx,
+            data.append({'type': 'node', 'id': 'node/' + name, 'name': name, 'nodeid': idx, 'level': '',
+                         'ip': '192.0.2.{0}'.format(10 + idx),
                          'online': 1 if state.get('online', True) else 0, 'local': 1 if idx == 1 else 0})
         data[0]['online'] = online
         return ok(data)
@@ -483,12 +545,23 @@ class FakePve(StorageTransfer, StorageApi, PoolsApi, FirewallApi, GenericApi, Lx
     async def _ceph_status(self, request):
         if self.ceph['down']:
             raise PveError(500, 'rados_connect failed - Connection timed out')
-        return ok({'health': {'status': self.ceph['health']}, 'fsid': '00000000-fake-ceph'})
+        return ok(shapes.ceph_status(self.ceph['health'], sorted(self.nodes)[0]))
 
     # ---------------------------------------------------------------- tasks
 
-    def _task_view(self, task):
-        return dict((k, v) for k, v in task.items() if k != 'log')
+    def _task_view(self, task, listing=False):
+        """A task as the API shows it: the status endpoint has `exitstatus`, the list the exit status in `status`."""
+        data = dict((k, v) for k, v in task.items() if k != 'log')
+        if '!' in data['user']:
+            data['tokenid'] = data['user'].partition('!')[2]
+        if listing:
+            exitstatus = data.pop('exitstatus', None)
+            data.pop('status')
+            if exitstatus is not None:
+                data['status'] = exitstatus
+        else:
+            data.pop('endtime', None)
+        return data
 
     def _verify(self, request, values, drop=()):
         """The values checked against the method's schema, as the generic handler does: PVE's 400 on errors."""
@@ -512,7 +585,7 @@ class FakePve(StorageTransfer, StorageApi, PoolsApi, FirewallApi, GenericApi, Lx
         p = self._verify(request, await params(request))
         vmid = p.get('vmid')
         audit = self.allowed(user, '/nodes/' + node, 'Sys.Audit')
-        data = [self._task_view(t) for t in self.tasklog
+        data = [self._task_view(t, True) for t in self.tasklog
                 if t['node'] == node and (vmid is None or t['id'] == str(vmid))
                 and (audit or self._task_owner(user, t))]
         data.sort(key=lambda t: -t['starttime'])
@@ -551,22 +624,49 @@ class FakePve(StorageTransfer, StorageApi, PoolsApi, FirewallApi, GenericApi, Lx
             self.require(request[USER], '/vms/{0}'.format(vm.vmid), priv)
         return vm
 
-    async def _status_current(self, request):
-        vm = self._vm(request, 'VM.Audit')
-        data = {'vmid': vm.vmid, 'name': vm.name, 'status': vm.status, 'qmpstatus': vm.qmpstatus,
-                'cpus': int(vm.config.get('cores', 1)) * int(vm.config.get('sockets', 1)),
-                'maxmem': int(str(vm.config.get('memory', 512)).split('=')[-1]) * 1048576,
-                'cpu': 0.02 if vm.status == 'running' else 0,
-                'mem': 67108864 if vm.status == 'running' else 0,
-                'uptime': int(time.time() - vm.started_at) if vm.status == 'running' and vm.started_at else 0,
-                'ha': {'managed': 1, 'state': vm.ha_state} if vm.ha_managed else {'managed': 0},
-                'running-qemu': '10.0.2' if vm.status == 'running' else None}
-        if vm.lock:
+    async def _qemu_list(self, request):
+        """GET /nodes/{node}/qemu: the VMs of the node, those the user may audit."""
+        node = request.match_info['node']
+        user = request[USER]
+        data = []
+        for vm in self.vms:
+            if vm.node != node or not self.allowed(user, '/vms/{0}'.format(vm.vmid), 'VM.Audit'):
+                continue
+            data.append(self._vm_status(vm, listing=True))
+        return ok(self._complete('/nodes/{node}/qemu', data, node=node))
+
+    def _vm_status(self, vm, listing=False):
+        """The vmstatus fields of a VM, as status/current and the VM list show them."""
+        use = self._vm_usage(vm)
+        running = vm.status == 'running'
+        data = {'vmid': vm.vmid, 'name': vm.name, 'status': vm.status, 'cpus': use.pop('maxcpu'), **use,
+                'serial': 1 if 'serial0' in vm.config else 0}
+        if listing:
+            data.pop('diskread'), data.pop('diskwrite')
             data['lock'] = vm.lock
+        else:
+            data.update(qmpstatus=vm.qmpstatus, clipboard=None, balloon=use['maxmem'],
+                        agent=1 if str(vm.config.get('agent', '0')).split(',')[0].split('=')[-1] == '1' else 0,
+                        ha={'managed': 1, 'state': vm.ha_state} if vm.ha_managed else {'managed': 0})
+            data['lock'] = vm.lock
+            if running:
+                data['running-qemu'] = '10.0.2'
+                data['running-machine'] = shapes.MACHINE
+        if running:
+            data['pid'] = 1000 + vm.vmid
+            data.update(pressurecpusome=0, pressurecpufull=0, pressureiosome=0, pressureiofull=0,
+                        pressurememorysome=0, pressurememoryfull=0)
+        if vm.config.get('tags'):
+            data['tags'] = vm.config['tags']
         if vm.template:
             data['template'] = 1
         data.update(vm.stats)
-        return ok(dict((k, v) for k, v in data.items() if v is not None))
+        return dict((k, v) for k, v in data.items() if v is not None or k == 'clipboard')
+
+    async def _status_current(self, request):
+        vm = self._vm(request, 'VM.Audit')
+        return ok(self._complete('/nodes/{node}/qemu/{vmid}/status/current', self._vm_status(vm),
+                                node=vm.node, vmid=vm.vmid))
 
     def _check_lock(self, vm, allow=()):
         if vm.lock and vm.lock not in allow:
@@ -709,6 +809,8 @@ class FakePve(StorageTransfer, StorageApi, PoolsApi, FirewallApi, GenericApi, Lx
         # The current config; /pending shows what the next start will use.
         vm = self._vm(request, 'VM.Audit')
         cfg = dict(vm.config)
+        if 'memory' in cfg:
+            cfg['memory'] = str(cfg['memory'])  # PVE sends it as a string
         cfg['digest'] = vm.digest()
         return ok(cfg)
 

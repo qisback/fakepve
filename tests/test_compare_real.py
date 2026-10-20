@@ -219,3 +219,4 @@ def test_diff_reports_status_keys_and_types(tool):
     assert tool.report(real, fake, found, lines.append) == 4
     assert '4 differences' in lines[-1]
     assert tool.compare(real, real) == []
+

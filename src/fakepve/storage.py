@@ -357,7 +357,8 @@ class StorageApi(StatefulRoutes):
             return None
         item = {'id': 'storage/{0}/{1}'.format(node, name), 'type': 'storage', 'node': node, 'storage': name,
                 'status': 'available' if store.get('active') else 'unknown', 'plugintype': store.get('type', 'dir'),
-                'content': store.get('content', ''), 'shared': 1 if store.get('shared') else 0}
+                'content': store.get('content', ''), 'shared': 1 if store.get('shared') else 0,
+                'disk': 0, 'maxdisk': 100 * 1024 ** 3}
         pool = self._pool_of_storage(name) if hasattr(self, '_pool_of_storage') else None
         if pool:
             item['pool'] = pool

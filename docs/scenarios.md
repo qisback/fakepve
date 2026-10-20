@@ -363,8 +363,8 @@ async with fake() as (pve, api):
 ```text
 595 {"data": null, "message": "No route to host\n"}
 [('web1', 'unknown')]
-[{'node': 'pve1', 'status': 'online', 'type': 'node'}, {'node': 'pve2', 'status': 'offline', 'type': 'node'}]
-200 {"data": {"vmid": 100, "name": "web1", "status": "running", "qmpstatus": "running", "cpus": 1, "maxmem": 536870912, "cpu": 0.02, "mem": 67108864, "uptime": 0, "ha": {"managed": 0}, "running-qemu": "10.0.2"}}
+[{'node': 'pve1', 'id': 'node/pve1', 'status': 'online', 'type': 'node', 'level': '', 'ssl_fingerprint': '00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:10:21:32:43:54:65:76:87:98:A9:BA:CB:DC:ED:FE:0F', 'cpu': 0.02, 'maxcpu': 4, 'mem': 2147483648, 'maxmem': 8589934592, 'disk': 4294967296, 'maxdisk': 68719476736, 'uptime': 3600}, {'node': 'pve2', 'id': 'node/pve2', 'status': 'offline', 'type': 'node', 'level': '', 'ssl_fingerprint': '00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:10:21:32:43:54:65:76:87:98:A9:BA:CB:DC:ED:FE:0F'}]
+200 {"data": {"vmid": 100, "name": "web1", "status": "running", "cpus": 1, "cpu": 0.02, "mem": 67108864, "memhost": 67108864, "disk": 0, "diskread": 0, "diskwrite": 0, "netin": 0, "netout": 0, "maxdisk": 0, "maxmem": 536870912, "uptime": 0, "serial": 0, "qmpstatus": "running", "clipboard": null, "balloon": 536870912, "agent": 0, "ha": {"managed": 0}, "running-qemu": "10.0.2", "running-machine": "pc-i440fx-9.2+pve1", "pid": 1100, "pressurecpusome": 0, "pressurecpufull": 0, "pressureiosome": 0, "pressureiofull": 0, "pressurememorysome": 0, "pressurememoryfull": 0}}
 ```
 
 ## Slow and flaky networks
@@ -439,7 +439,7 @@ rbd error: rbd: couldn't connect to the cluster! (Connection timed out)
 500 {"data": null, "message": "rbd error: rbd: couldn't connect to the cluster! (Connection timed out)\n"}
 500 {"data": null, "message": "rbd error: rbd: listing images failed: (110) Connection timed out\n"}
 local VM: OK
-{'data': {'health': {'status': 'HEALTH_OK'}, 'fsid': '00000000-fake-ceph'}}
+{'data': {'fsid': '00000000-0000-4000-8000-000000000000', 'election_epoch': 4, 'quorum': [0], 'quorum_names': ['pve1'], 'quorum_age': 3600, 'health': {'status': 'HEALTH_OK', 'checks': {}, 'mutes': []}, 'monmap': {'epoch': 1, 'min_mon_release_name': 'squid', 'num_mons': 1}, 'osdmap': {'epoch': 10, 'num_osds': 1, 'num_up_osds': 1, 'num_in_osds': 1}, 'pgmap': {'num_pgs': 1, 'num_pools': 1, 'num_objects': 0, 'data_bytes': 0, 'bytes_used': 0, 'bytes_avail': 1073741824, 'bytes_total': 1073741824, 'pgs_by_state': []}, 'mgrmap': {'available': True, 'num_standbys': 0, 'modules': ['iostat']}, 'servicemap': {'epoch': 1, 'modified': '2026-01-01T00:00:00.000000+0000', 'services': {}}, 'fsmap': {'epoch': 1, 'by_rank': [], 'up:standby': 0}}}
 ```
 
 ## Storage full
@@ -587,7 +587,7 @@ async with fake(login=False) as (pve, api):
 
 <!-- output -->
 ```text
-200 {"data": {"vmid": 100, "name": "web1", "status": "stopped", "qmpstatus": "stopped", "cpus": 1, "maxmem": 536870912, "cpu": 0, "mem": 0, "uptime": 0, "ha": {"managed": 0}}}
+200 {"data": {"vmid": 100, "name": "web1", "status": "stopped", "cpus": 1, "cpu": 0, "mem": 0, "memhost": 0, "disk": 0, "diskread": 0, "diskwrite": 0, "netin": 0, "netout": 0, "maxdisk": 0, "maxmem": 536870912, "uptime": 0, "serial": 0, "qmpstatus": "stopped", "clipboard": null, "balloon": 536870912, "agent": 0, "ha": {"managed": 0}}}
 403 {"data": null, "message": "Permission check failed (/vms/100, VM.PowerMgmt)\n"}
 200
 403 {"data": null, "message": "Permission check failed (/vms/100, VM.Config.CPU)\n"}
@@ -607,7 +607,7 @@ async with fake(login=False) as (pve, api):
 
 <!-- output -->
 ```text
-200 {"data": [{"userid": "root@pam"}]}
+200 {"data": [{"enable": 1, "expire": 0, "userid": "root@pam"}]}
 403 {"data": null, "message": "Permission check failed (/pool/p1, Pool.Allocate)\n"}
 ```
 
@@ -834,7 +834,7 @@ async with fake() as (pve, api):
 
 <!-- output -->
 ```text
-{'memory': 1024, 'description': 'hello'}
+{'memory': '1024', 'description': 'hello'}
 [{'key': 'memory', 'value': 1024, 'pending': '2048'}]
 2048 {}
 ```

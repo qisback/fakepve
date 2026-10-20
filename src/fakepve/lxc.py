@@ -279,12 +279,12 @@ class LxcApi(StatefulRoutes):
         if v.get('vmid') not in (None, ''):
             if self.guest(int(v['vmid'])):
                 raise param_error(vmid='VM {0} already exists'.format(v['vmid']))
-            return v['vmid']
+            return str(v['vmid'])
         lower, upper = 100, 1000 * 1000
         taken = set(vm.vmid for vm in self.vms) | set(ct.vmid for ct in self.cts)
         for vmid in range(lower, upper):
             if vmid not in taken:
-                return vmid
+                return str(vmid)
         raise PveError(500, 'unable to get any free VMID in range [{0}, {1}]'.format(lower, upper))
 
     # ----------------------------------------------------------- lookup
@@ -327,7 +327,8 @@ class LxcApi(StatefulRoutes):
             item = {'id': ct.guest, 'type': 'lxc', 'node': ct.node, 'name': ct.name, 'vmid': ct.vmid,
                     'status': ct.status if online else 'unknown', 'template': 1 if ct.template else 0,
                     'maxcpu': self._cpus(ct), 'maxmem': self._maxmem(ct), 'maxdisk': self._maxdisk(ct),
-                    'cpu': 0, 'mem': 0, 'disk': 0, 'uptime': self._uptime(ct)}
+                    'cpu': 0, 'mem': 0, 'disk': 0, 'uptime': self._uptime(ct), 'netin': 0, 'netout': 0,
+                    'diskread': 0, 'diskwrite': 0}
             if ct.lock:
                 item['lock'] = ct.lock
             if ct.pool:
@@ -456,6 +457,10 @@ class LxcApi(StatefulRoutes):
                 'diskread': 0, 'diskwrite': 0}
         if ct.pid and ct.status == 'running':
             data['pid'] = ct.pid
+            # PVE sends the pressure stall figures of a running container as strings.
+            for res in ('cpu', 'io', 'memory'):
+                data['pressure{0}some'.format(res)] = '0.00'
+                data['pressure{0}full'.format(res)] = '0.00'
         if ct.config.get('tags'):
             data['tags'] = ct.config['tags']
         if ct.template:
@@ -1459,8 +1464,8 @@ class LxcApi(StatefulRoutes):
             return None
         out = [{'name': 'lo', 'hwaddr': '00:00:00:00:00:00', 'hardware-address': '00:00:00:00:00:00',
                 'inet': '127.0.0.1/8', 'inet6': '::1/128',
-                'ip-addresses': [{'ip-address-type': 'inet', 'ip-address': '127.0.0.1', 'prefix': 8},
-                                 {'ip-address-type': 'inet6', 'ip-address': '::1', 'prefix': 128}]}]
+                'ip-addresses': [{'ip-address-type': 'inet', 'ip-address': '127.0.0.1', 'prefix': '8'},
+                                 {'ip-address-type': 'inet6', 'ip-address': '::1', 'prefix': '128'}]}]
         for key in sorted(k for k in ct.config if re.fullmatch(r'net\d+', k)):
             props = split_props(ct.config[key])[1]
             item = {'name': props.get('name', 'eth0'), 'hwaddr': props.get('hwaddr', ''),
@@ -1471,7 +1476,7 @@ class LxcApi(StatefulRoutes):
                     address, prefix = cidr.split('/', 1)
                     item[family] = cidr
                     item['ip-addresses'].append({'ip-address-type': family, 'ip-address': address,
-                                                 'prefix': int(prefix)})
+                                                 'prefix': prefix})
             out.append(item)
         return out
 

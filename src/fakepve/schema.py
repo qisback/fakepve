@@ -449,17 +449,22 @@ def _fit(sch, val):
     return val[:sch['maxLength']] if 'maxLength' in sch else val
 
 
-def sample(sch, name='', ctx=None):
-    """A value that satisfies a schema. ctx maps property names to preferred values."""
+def sample(sch, name='', ctx=None, optional=()):
+    """A value that satisfies a schema. ctx maps property names to preferred values.
+
+    Optional properties are left out unless ctx has them or `optional` names them.
+    """
     ctx = ctx or {}
     kind = sch.get('type')
     if 'oneOf' in sch and kind is None:
-        return sample(sch['oneOf'][0], name, ctx)
+        return sample(sch['oneOf'][0], name, ctx, optional)
     if name in ctx and kind in ('string', 'integer', 'number', None):
         val = ctx[name]
         if kind == 'integer' and _is_int(val):
             return int(val)
-        if kind in ('string', None):
+        if kind in ('string', None) and sch.get('enum') and str(val) not in sch['enum']:
+            val = None  # the preferred value is not an allowed one
+        if val is not None and kind in ('string', None):
             val = str(val)
             if not sch.get('pattern') or (_pattern(sch['pattern']) or re.compile('')).match(val):
                 return val
@@ -484,7 +489,7 @@ def sample(sch, name='', ctx=None):
     if kind == 'array':
         if not sch.get('items'):
             return []
-        return [sample(sch['items'], name, ctx)]
+        return [sample(sch['items'], name, ctx, optional)]
     if kind == 'null':
         return None
     if kind == 'any':
@@ -494,7 +499,7 @@ def sample(sch, name='', ctx=None):
         out = {}
         for key, sub in (props or {}).items():
             # Optional properties only where the name tells what to put there.
-            if not sub.get('optional') or key in ctx:
-                out[key] = sample(sub, key, ctx)
+            if not sub.get('optional') or key in ctx or key in optional:
+                out[key] = sample(sub, key, ctx, optional)
         return out
     return None

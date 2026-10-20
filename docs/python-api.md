@@ -550,7 +550,7 @@ Constructor: `FakePve(user='root@pam', password='secret', host=None, port=8006)`
 | `resolve(request, prefix)` | The schema match of a request path, or None. |
 | `is_world(match, method)` | True if the method needs no login. |
 | `async answer(request, match, params, user, call=None)` | The data for a request: checked against the schema, then call(match, values) or a value from `returns`. |
-| `check_permissions(user, perms, values)` | Raise a 403 PveError unless user satisfies the schema's permission rule. |
+| `check_permissions(user, perms, values, declared=None)` | Raise a 403 PveError unless user satisfies the schema's permission rule. |
 | `async synthesise(match, method, info, user, values)` | The answer for a generic method: a task UPID, or a value built from its `returns`. |
 | `firewall_config(scope, node=None, vmid=None)` | The stored firewall config of 'cluster', a node ('host') or a guest ('vm' or 'ct'). |
 | `storage_config(name)` | The storage as GET /storage/{storage} shows it. |
@@ -724,7 +724,7 @@ Attributes after construction:
 |---|---|
 | `load()` | The vendored PVE schema, as a Schema. |
 | `validate(spec, values)` | Check request values against a method's parameter schema. |
-| `sample(sch, name='', ctx=None)` | A value that satisfies a schema. ctx maps property names to preferred values. |
+| `sample(sch, name='', ctx=None, optional=())` | A value that satisfies a schema. ctx maps property names to preferred values. |
 | `is_task(method, info)` | True if the method starts a worker task and so answers with a UPID. |
 
 ### fakepve.schema.Schema

@@ -11,6 +11,7 @@ import urllib.parse
 from aiohttp import web
 
 from . import schema as pve_schema
+from . import shapes
 from .model import PveError
 
 # Methods that look like tasks by their result but return something else.
@@ -62,27 +63,28 @@ class GenericApi(object):
         if 'node' in match.params and match.params['node'] not in self.nodes:
             raise PveError(500, "hostname lookup '{0}' failed - failed to get address info for: {0}: "
                                 "Name or service not known".format(match.params['node']))
-        self.check_permissions(user, info.get('permissions'), values)
+        self.check_permissions(user, info.get('permissions'), values, declared)
         if call is not None:
             return await call(match, values)
         return await self.synthesise(match, method, info, user, values)
 
     # ---------------------------------------------------------- permissions
 
-    def check_permissions(self, user, perms, values):
+    def check_permissions(self, user, perms, values, declared=None):
         """Raise a 403 PveError unless user satisfies the schema's permission rule."""
         if user is not None and (self.acl is None or root_only(user)):
             return
         if perms is None:
             ok, why = False, 'user != root@pam'
         elif 'check' in perms:
-            ok, why = self._check(user, perms['check'], values)
+            ok, why = self._check(user, perms['check'], values, declared)
         elif perms.get('user') in ('all', 'world'):
             return
         else:
             ok, why = False, 'user != root@pam'
         if not ok:
-            raise PveError(403, 'Permission check failed ({0})'.format(why))
+            # A refusal by the "self" rule carries no reason in PVE.
+            raise PveError(403, 'Permission check failed ({0})'.format(why) if why else 'Permission check failed')
 
     def _has(self, user, path, priv):
         try:
@@ -90,13 +92,17 @@ class GenericApi(object):
         except ValueError:  # '/vms/<not a number>'
             return False
 
-    def _check(self, user, check, values):
+    def _check(self, user, check, values, declared=None):
         """Evaluate one permission rule: (allowed, reason)."""
         form = check[0]
         if form == 'perm':
             path = check[1]
             opts = dict(zip(check[3::2], check[4::2], strict=False))
             for name in set(self._names(path)):
+                if values.get(name) is None and declared is not None and name not in declared:
+                    # The rule names a parameter the method does not take: PVE leaves it empty.
+                    path = '/' + '/'.join(seg for seg in path.replace('{' + name + '}', '').split('/') if seg)
+                    continue
                 if values.get(name) is None:
                     return False, path
                 path = path.replace('{' + name + '}', str(values[name]))
@@ -112,13 +118,14 @@ class GenericApi(object):
         if form in ('and', 'or'):
             why = ''
             for sub in check[1:]:
-                ok, why = self._check(user, sub, values)
+                ok, why = self._check(user, sub, values, declared)
                 if ok == (form == 'or'):
                     return ok, why
-            return form == 'and', why
+            # PVE names no reason when none of several alternatives held.
+            return form == 'and', why if form == 'and' else ''
         if form == 'userid-param' and check[1] == 'self':
             userid = values.get('userid')
-            return userid is not None and userid == user.split('!')[0], 'user != self'
+            return userid is not None and userid == user.split('!')[0], ''
         if form == 'userid-param':
             realm = str(values.get('userid', '')).rpartition('@')[2]
             path = '/access/realm/' + realm
@@ -138,6 +145,19 @@ class GenericApi(object):
 
     # -------------------------------------------------------------- results
 
+    def _sample_context(self, values=None):
+        """The preferred values for names in a synthesised answer."""
+        ctx = {'node': sorted(self.nodes)[0], 'storage': sorted(self.storages)[0], '_nodes': sorted(self.nodes)}
+        if self.vms:
+            ctx['vmid'] = self.vms[0].vmid
+        ctx.update(values or {})
+        return ctx
+
+    def _complete(self, template, data, **values):
+        """A hand-built answer for the GET method of `template`, with the keys PVE sends that it lacks."""
+        returns = pve_schema.load().paths[template]['GET'].get('returns') or {}
+        return shapes.complete(template, data, returns, self._sample_context(values))
+
     async def synthesise(self, match, method, info, user, values):
         """The answer for a generic method: a task UPID, or a value built from its `returns`."""
         returns = info.get('returns') or {}
@@ -150,11 +170,7 @@ class GenericApi(object):
             async def body():
                 return None
             return await self.task(node, ttype, values.get('vmid', ''), user or 'root@pam', body)
-        ctx = {'node': sorted(self.nodes)[0], 'storage': sorted(self.storages)[0]}
-        if self.vms:
-            ctx['vmid'] = self.vms[0].vmid
-        ctx.update(values)
-        data = pve_schema.sample(returns, '', ctx)
+        data = shapes.build(match.template, returns, self._sample_context(values), method)
         links = returns.get('links') or []
         if returns.get('type') == 'array' and not (returns.get('items') or {}).get('properties') and links:
             # A directory listing: one entry per named child.

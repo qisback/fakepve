@@ -8,6 +8,7 @@ from aiohttp.test_utils import make_mocked_request
 
 from conftest import Client
 from fakepve import schema
+from fakepve.shapes import DEVIATIONS
 
 SCHEMA = schema.load()
 METHODS = [(path, method) for path, methods in sorted(SCHEMA.paths.items()) for method in sorted(methods)]
@@ -95,6 +96,15 @@ def conforms(sch, data, where='data'):
     return 'unknown type {0}'.format(kind)
 
 
+def tolerated(template, why):
+    """True if the mismatch is one where a real PVE is known to differ from its schema (shapes.DEVIATIONS)."""
+    where, _, reason = why.partition(': ')
+    where = re.sub(r'\[\d+\]', '[]', where)[len('data'):]
+    if reason.startswith('missing '):
+        where += '.' + reason[len('missing '):]
+    return where.lstrip('.') in DEVIATIONS.get(template, ())
+
+
 async def hand_written(pve, path, method):
     """True if a route other than the catch-all takes this request."""
     request = make_mocked_request(method, API + path)
@@ -120,6 +130,8 @@ async def test_every_method_answers(pve, api):
             failures.append((method, path, status, body))
             continue
         why = conforms(info.get('returns') or {}, body.get('data'))
+        if why and tolerated(path, why):
+            why = None
         if why:
             failures.append((method, path, 'response', why))
             continue

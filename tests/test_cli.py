@@ -129,7 +129,7 @@ def test_guest_fields(cli, tmp_path):
     assert data['status'] == 'running' and data['lock'] == 'backup'
     assert data['ha'] == {'managed': 1, 'state': 'started'}
     _, config = server.call('/nodes/pve2/qemu/200/config', headers=auth)
-    assert config['data']['memory'] == 512 and config['data']['name'] == 'x1'
+    assert config['data']['memory'] == '512' and config['data']['name'] == 'x1'
     _, agent = server.call('/nodes/pve2/qemu/200/agent/get-osinfo', headers=auth)
     assert agent['data']['result'] == {'name': 'Debian'}
 

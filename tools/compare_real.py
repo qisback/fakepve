@@ -2,7 +2,7 @@
 """Compare fakepve's answers with a real PVE, read-only, keeping only shapes.
 
     compare_real.py record --url https://HOST:8006 --token-file FILE (--insecure | --cafile CA) [--out shape.json]
-    compare_real.py diff shape.json [--against other.json] [--strict]
+    compare_real.py diff shape.json [--against other.json] [--strict] [--as-root] [--no-ignore-config-keys]
     compare_real.py --self-test
 
 record walks every GET method of the vendored schema, with GET and nothing else, and writes a shape file:
@@ -10,8 +10,12 @@ per method the status, the types and key names of the answer and the error text 
 removed. No value is kept; a self-check refuses to write a file that holds one. The token is read from a file,
 never from the command line, and is never printed or written.
 
-diff runs the same walk against an in-process fakepve seeded with the counts in the shape file (or compares two
-shape files) and lists, per method, status, key and type differences.
+record also keeps the names of the privileges the token holds (from GET /access/permissions, names only).
+
+diff runs the same walk against an in-process fakepve seeded with the counts in the shape file, as a user holding
+the same privileges (or compares two shape files), and lists, per method, status, key and type differences.
+Keys that depend on what one object has set (a VM's config keys, the options of a storage) are not counted
+unless --no-ignore-config-keys is given.
 """
 
 import argparse
@@ -33,15 +37,19 @@ except ImportError:
 
 try:
     from fakepve import schema as fschema
+    from fakepve.shapes import PRIVILEGES
 except ImportError:
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src'))
     from fakepve import schema as fschema
+    from fakepve.shapes import PRIVILEGES
 
 FORMAT = 1
 KEY = '<key>'
 UNKNOWN = '<x>'
 TYPES = ('null', 'boolean', 'integer', 'number', 'string', 'object', 'array', 'mixed')
 SHAPE_FIELDS = {'t', 'keys', 'optional', 'items', 'of', 'nullable'}
+DOC_FIELDS = {'format', 'endpoints', 'skipped', 'inventory'}
+PERMISSIONS = '/access/permissions'
 ENTRY_FIELDS = {'status', 'shape', 'errors', 'samples'}
 MAX_BODY = 8 * 1024 ** 2
 API = '/api2/json'
@@ -244,9 +252,12 @@ def check_shape(s, vocab, where='data'):
 
 def check_doc(doc, vocab):
     """Raise Leak unless the whole shape file holds no value."""
-    if not isinstance(doc, dict) or set(doc) != {'format', 'endpoints', 'skipped', 'inventory'} or \
+    if not isinstance(doc, dict) or not DOC_FIELDS <= set(doc) <= DOC_FIELDS | {'privileges'} or \
             doc['format'] != FORMAT:
         raise Leak('not a shape file')
+    privs = doc.get('privileges', [])
+    if not isinstance(privs, list) or any(p not in PRIVILEGES for p in privs) or privs != sorted(set(privs)):
+        raise Leak('bad privileges')
     for name, entry in doc['endpoints'].items():
         method, _, template = name.partition(' ')
         if method != 'GET' or template not in vocab.templates:
@@ -460,7 +471,21 @@ class Walker(object):
             if got:
                 doc['endpoints']['GET ' + template] = self.entry([res for _, res in got])
         doc['inventory'] = self.inventory()
+        privs = self.privileges()
+        if privs is not None:
+            doc['privileges'] = privs
         return doc
+
+    def privileges(self):
+        """Names of the privileges the token holds anywhere, from GET /access/permissions; None if not answered."""
+        found = [r for _, r in self.results.get(PERMISSIONS, []) if 200 <= r.status < 300 and isinstance(r.data, dict)]
+        if not found:
+            return None
+        names = set()
+        for held in found[0].data.values():
+            if isinstance(held, dict):
+                names.update(p for p, on in held.items() if p in PRIVILEGES and on)
+        return sorted(names)
 
     def entry(self, results):
         good = [r for r in results if 200 <= r.status < 300]
@@ -512,23 +537,58 @@ def diff_shapes(real, fake, where, out):
     rv, fv = view(real), view(fake)
     if not rv or not fv:
         return
-    if set(rv) != set(fv):
+    # A value the real PVE sends as more than one type (a boolean here, a number there) matches any of them.
+    if not set(fv) <= set(rv):
         out.append(('type', where, '{0} in real, {1} in fake'.format('/'.join(sorted(rv)), '/'.join(sorted(fv)))))
     for t in sorted(set(rv) & set(fv)):
         a, b = rv[t], fv[t]
         if t == 'object':
             for key in sorted(set(a['keys']) - set(b['keys'])):
-                kind = 'missing-optional' if key in a.get('optional', ()) else 'missing-key'
+                if key == KEY:
+                    kind = 'undocumented'
+                else:
+                    kind = 'missing-optional' if key in a.get('optional', ()) else 'missing-key'
                 out.append((kind, where + '.' + key, 'in real, not in fake'))
             for key in sorted(set(b['keys']) - set(a['keys'])):
-                out.append(('extra-key', where + '.' + key, 'in fake, not in real'))
+                out.append(('undocumented' if key == KEY else 'extra-key', where + '.' + key,
+                            'in fake, not in real'))
             for key in sorted(set(a['keys']) & set(b['keys'])):
                 diff_shapes(a['keys'][key], b['keys'][key], where + '.' + key, out)
         elif t == 'array' and a.get('items') and b.get('items'):
             diff_shapes(a['items'], b['items'], where + '[]', out)
 
 
-def compare(real, fake):
+# Answers whose keys depend on what one object holds: a VM's config keys, the options of a storage type, the
+# privileges of a role. Missing or extra keys there are not defects, apart from the top-level keys listed (always
+# sent); None lists none.
+VARIES = {
+    '/nodes/{node}/qemu/{vmid}/config': ('digest',),
+    '/nodes/{node}/lxc/{vmid}/config': ('digest',),
+    '/nodes/{node}/qemu/{vmid}/snapshot/{snapname}/config': ('snaptime', 'description'),
+    '/nodes/{node}/lxc/{vmid}/snapshot/{snapname}/config': ('snaptime', 'description'),
+    '/storage': ('storage', 'type', 'content', 'digest'),
+    '/storage/{storage}': ('storage', 'type', 'content', 'digest'),
+    '/nodes/{node}/storage/{storage}/content': ('volid', 'content', 'format', 'size', 'ctime'),
+    '/access/roles/{roleid}': None,
+    '/access/permissions': None,
+}
+KEY_KINDS = ('missing-key', 'missing-optional', 'extra-key')
+TOP_LEVEL = re.compile(r'^(\[\])?\.([^.\[\]]+)$')
+
+
+def varies(name, kind, where):
+    """True if the difference is a key that depends on the object (see VARIES)."""
+    template = name.partition(' ')[2]
+    if template not in VARIES or kind not in KEY_KINDS:
+        return False
+    keep = VARIES[template]
+    if keep is None:
+        return True
+    m = TOP_LEVEL.match(where)
+    return bool(m) and m.group(2) not in keep
+
+
+def compare(real, fake, ignore_config_keys=True):
     """Differences between two shape files, as (method path, kind, where, detail)."""
     out = []
     for name in sorted(real['endpoints']):
@@ -543,10 +603,13 @@ def compare(real, fake):
             diff_shapes(a['shape'], b['shape'], '', found)
         elif a.get('errors') != b.get('errors') and 'shape' not in a:
             found.append(('error-message', '', 'error text differs'))
-        out.extend((name,) + f for f in found)
+        out.extend((name, 'config-dependent' if ignore_config_keys and varies(name, f[0], f[1]) else f[0]) + f[1:]
+                   for f in found)
     return out
 
 
+# Not counted: missing-optional (sent only sometimes) and undocumented (keys the schema does not name).
+QUIET = ('unsampled', 'config-dependent', 'undocumented')
 FATAL = ('status', 'missing-key', 'extra-key', 'type', 'error-message')
 
 
@@ -557,7 +620,7 @@ def report(real, fake, differences, write=print):
         counts[kind] = counts.get(kind, 0) + 1
     last = None
     for name, kind, where, detail in differences:
-        if kind == 'unsampled':
+        if kind in QUIET:
             continue
         if name != last:
             write(name)
@@ -566,6 +629,9 @@ def report(real, fake, differences, write=print):
     write('compared {0} methods; {1} not sampled in the fake; {2} differences{3}'.format(
         len(both), counts.get('unsampled', 0), sum(v for k, v in counts.items() if k != 'unsampled'),
         ''.join('; {0} {1}'.format(v, k) for k, v in sorted(counts.items()) if k != 'unsampled')))
+    if counts.get('config-dependent') or counts.get('undocumented'):
+        write('not defects: {0} keys that depend on the object, {1} keys the schema does not name'.format(
+            counts.get('config-dependent', 0), counts.get('undocumented', 0)))
     return sum(counts.get(k, 0) for k in FATAL)
 
 
@@ -579,10 +645,11 @@ def seed(pve, inv):
     for n in range(inv.get('qemu', 0)):
         pve.add_vm(100 + n, 'vm{0}'.format(n), node=nodes[n % len(nodes)],
                    status='running' if n % 2 == 0 else 'stopped',
-                   config={'memory': 512, 'cores': 1})
+                   config={'memory': 512, 'cores': 1, 'tags': 'example',
+                           'scsi0': 'local:100/vm-100-disk-0.raw,size=8G'})
     for n in range(inv.get('lxc', 0)):
         pve.add_ct(200 + n, 'ct{0}'.format(n), node=nodes[n % len(nodes)],
-                   status='running' if n % 2 == 0 else 'stopped')
+                   status='running' if n % 2 == 0 else 'stopped', config={'tags': 'example'})
     want = inv.get('storage')
     if want is not None:
         for name in sorted(pve.storages)[want:]:
@@ -594,18 +661,49 @@ def seed(pve, inv):
                                                   'path': '/srv/store{0}'.format(n)}
     for n in range(inv.get('pool', 0)):
         pve.pools['pool{0}'.format(n)] = set()
-        pve.pool_info['pool{0}'.format(n)] = {'comment': None, 'storage': set()}
+        pve.pool_info['pool{0}'.format(n)] = {'comment': 'Example pool', 'storage': set()}
+
+
+def doc_privileges(doc):
+    """The privilege names a shape file records: its `privileges`, else those in the shape of /access/permissions.
+
+    None if neither is there, or the token holds every privilege (the fake then runs as root).
+    """
+    names = doc_privilege_names(doc)
+    return None if names is None or set(PRIVILEGES) <= set(names) else names
+
+
+def doc_privilege_names(doc):
+    if 'privileges' in doc:
+        return list(doc['privileges'])
+    entry = doc['endpoints'].get('GET ' + PERMISSIONS)
+    if not entry or 'shape' not in entry or entry['status'] != 200:
+        return None
+    names = set()
+    for part in view(entry['shape']).get('object', {}).get('keys', {}).values():
+        for sub in view(part).get('object', {}).get('keys', {}):
+            if sub in PRIVILEGES:
+                names.add(sub)
+    return sorted(names)
 
 
 class Fake(object):
-    """An in-process fakepve on loopback, with one API token."""
+    """An in-process fakepve on loopback, with one API token.
 
-    TOKEN = 'root@pam!compare=00000000-0000-4000-8000-000000000000'
+    With `privileges` (names) the token belongs to a user that holds exactly those on `/`, so a 403 for a
+    method comes out as on a real PVE with a narrow role; without, the token is root@pam's.
+    """
 
-    def __init__(self, inv=None):
+    SECRET = '00000000-0000-4000-8000-000000000000'
+    USER = 'compare@pve'
+    TOKEN = 'root@pam!compare=' + SECRET
+
+    def __init__(self, inv=None, privileges=None):
         self.inv = inv or {}
+        self.privileges = privileges
         self.pve = None
         self.tmp = None
+        self.token = self.TOKEN if privileges is None else '{0}!compare={1}'.format(self.USER, self.SECRET)
 
     async def __aenter__(self):
         from fakepve import FakePve
@@ -615,11 +713,26 @@ class Fake(object):
             raise ToolError('the in-process fake needs the cryptography package') from None
         self.tmp = tempfile.TemporaryDirectory(prefix='fakepve-compare-')
         self.pve = FakePve(host='127.0.0.1', port=0)
-        self.pve.apitokens['root@pam!compare'] = self.TOKEN.partition('=')[2]
+        self.pve.apitokens[self.token.partition('=')[0]] = self.SECRET
+        if self.privileges is not None:
+            self.pve.grant(self.USER, '/', *self.privileges)
         seed(self.pve, self.inv)
         cert, key, _ = make_cert(self.tmp.name)
         await self.pve.start(cert, key)
+        await self.seed_more()
         return self
+
+    async def seed_more(self):
+        """What the counts do not give: a finished task and a file in a storage that takes ISOs."""
+        node = sorted(self.pve.nodes)[0]
+
+        async def body():
+            return None
+        await self.pve.task(node, 'vzdump', 100, self.token.partition('=')[0], body)
+        for name, store in sorted(self.pve.storages.items()):
+            if 'iso' in str(store.get('content', '')):
+                self.pve.store_file(name, 'example.iso', 1048576)
+                break
 
     async def __aexit__(self, *exc):
         from fakepve import settle
@@ -628,9 +741,9 @@ class Fake(object):
         self.tmp.cleanup()
 
 
-async def record_fake(inv, per_param=2, k=5, include_rrd=False, limit=1500):
-    async with Fake(inv) as fake:
-        async with Client(fake.pve.url, Fake.TOKEN, tls=False, limit=limit) as client:
+async def record_fake(inv, per_param=2, k=5, include_rrd=False, limit=1500, privileges=None):
+    async with Fake(inv, privileges) as fake:
+        async with Client(fake.pve.url, fake.token, tls=False, limit=limit) as client:
             return await record(client, per_param=per_param, k=k, include_rrd=include_rrd)
 
 
@@ -638,7 +751,7 @@ async def self_test(write=print):
     """Record a seeded fake, record a second one seeded from the first file, expect no difference."""
     inv = {'node': 2, 'qemu': 3, 'lxc': 2, 'storage': 3, 'pool': 1}
     first, vocab = await record_fake(inv)
-    text = dump(first, vocab, [Fake.TOKEN, Fake.TOKEN.partition('=')[2]])
+    text = dump(first, vocab, [Fake.TOKEN, Fake.SECRET])
     first = json.loads(text)
     second, _ = await record_fake(first['inventory'])
     second = json.loads(dump(second, vocab))
@@ -675,6 +788,10 @@ def parser():
     dif.add_argument('--against', help='a second shape file instead of an in-process fakepve')
     dif.add_argument('--strict', action='store_true', help='exit 1 when there are differences')
     dif.add_argument('--include-rrd', action='store_true')
+    dif.add_argument('--as-root', action='store_true',
+                     help='run the fake as root instead of a user with the privileges the shape file records')
+    dif.add_argument('--ignore-config-keys', action=argparse.BooleanOptionalAction, default=True,
+                     help='do not count keys that depend on what one object holds (VM config, storage options)')
     return ap
 
 
@@ -711,9 +828,10 @@ async def amain(argv=None, write=print):
         if args.against:
             fake = load_doc(args.against)
         else:
-            fake, _ = await record_fake(real['inventory'], include_rrd=args.include_rrd)
+            privileges = None if args.as_root else doc_privileges(real)
+            fake, _ = await record_fake(real['inventory'], include_rrd=args.include_rrd, privileges=privileges)
             fake = json.loads(dump(fake, Vocab(fschema.load())))
-        found = report(real, fake, compare(real, fake), write)
+        found = report(real, fake, compare(real, fake, args.ignore_config_keys), write)
         return 1 if args.strict and found else 0
     parser().print_usage(sys.stderr)
     return 2

@@ -119,18 +119,18 @@ async def test_container_volumes_are_used_space_in_the_listing(pve, api):
 # ------------------------------------------------------------------ cluster
 
 async def test_nextid_skips_vms_and_containers(pve, api):
-    assert await api.data('GET', '/cluster/nextid') == 100
+    assert await api.data('GET', '/cluster/nextid') == '100'
     pve.add_vm(100, 'vm1')
     pve.add_ct(101, 'ct1')
-    assert await api.data('GET', '/cluster/nextid') == 102
+    assert await api.data('GET', '/cluster/nextid') == '102'
     pve.add_ct(102, 'ct2', node='pve2')
-    assert await api.data('GET', '/cluster/nextid') == 103
+    assert await api.data('GET', '/cluster/nextid') == '103'
     assert str(await api.data('GET', '/cluster/nextid?vmid=500')) == '500'
     for taken in (100, 101, 102):
         status, body = await api.call('GET', '/cluster/nextid?vmid={0}'.format(taken))
         assert status == 400 and body['errors'] == {'vmid': 'VM {0} already exists'.format(taken)}
     await make(api, vmid=103)
-    assert await api.data('GET', '/cluster/nextid') == 104
+    assert await api.data('GET', '/cluster/nextid') == '104'
 
 
 # ----------------------------------------------------------------- firewall

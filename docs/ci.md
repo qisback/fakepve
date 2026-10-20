@@ -118,7 +118,7 @@ finally:
 <!-- output -->
 ```text
 fakepve listening on https://127.0.0.77:8006
-200 {'data': [{'realm': 'fake', 'type': 'fake'}]}
+200 {'data': [{'comment': 'Example comment', 'realm': 'fake', 'type': 'fake', 'default': 1}]}
 ```
 
 From a shell, poll instead. `/access/domains` is one of the few endpoints that needs no login, which makes it a good probe:

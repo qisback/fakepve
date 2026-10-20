@@ -619,7 +619,7 @@ async def test_interfaces(pve, api):
     eth = {i['name']: i for i in await api.data('GET', CT + '/interfaces')}
     assert set(eth) == {'lo', 'eth0'} and eth['eth0']['inet'] == '192.0.2.10/24'
     assert eth['eth0']['hwaddr'] == eth['eth0']['hardware-address'] and eth['lo']['inet'] == '127.0.0.1/8'
-    assert eth['eth0']['ip-addresses'] == [{'ip-address-type': 'inet', 'ip-address': '192.0.2.10', 'prefix': 24}]
+    assert eth['eth0']['ip-addresses'] == [{'ip-address-type': 'inet', 'ip-address': '192.0.2.10', 'prefix': '24'}]
 
 
 # -------------------------------------------------------------- permissions

@@ -4,8 +4,8 @@
 
 Every path and method of the PVE API schema that fakepve answers, under `/api2/json`: 680 methods on 449 paths.
 
-- **stateful (hand-written)**: 177 methods keep state and follow PVE's rules (see [How it works](../how-it-works.md)).
-- **generic (from the schema)**: 503 methods check parameters and permissions as the schema states them and answer with a value of the right shape. A write succeeds and changes nothing.
+- **stateful (hand-written)**: 179 methods keep state and follow PVE's rules (see [How it works](../how-it-works.md)).
+- **generic (from the schema)**: 501 methods check parameters and permissions as the schema states them and answer with a value of the right shape. A write succeeds and changes nothing.
 - **routed to a hand-written handler that answers 501**: 0 methods whose route is claimed by a stateful family (VM `status/{action}`) but whose action is not modelled.
 
 For each method: **Access** is the permission rule from the schema (evaluated against `pve.grant`; root is always allowed), **Required** the parameters that must be sent (path parameters included), and **Errors** the names that `pve.fail(..., error=name)` accepts, from the [error catalogue](../errors.md). Errors marked "in the task" are raised in a PVE worker: the request succeeds and the task ends with the error.
@@ -125,7 +125,7 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/access/permissions`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: any logged-in user
   - Required: none (+2 optional)
   - Errors: `not_valid_token_id_not`
@@ -2762,7 +2762,7 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/qemu`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: any logged-in user
   - Required: `node` (+1 optional)
   - Errors: `configuration_file_does_not_exist`

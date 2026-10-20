@@ -61,8 +61,8 @@ Every route is also served under `/api2/extjs`, with the same handlers, authenti
 `FakePve._build_app` lists them. They are the paths whose answers depend on what happened before:
 
 - `access/ticket`, `access/password`, `version`;
-- `nodes`, `cluster/resources`, `cluster/status`, `cluster/ceph/status`, `cluster/nextid` (VM and container ids);
-- per node: `tasks`, `tasks/{upid}/status`, `tasks/{upid}/log`, `storage/{s}/download-url`, `storage/{s}/upload`;
+- `nodes`, `cluster/resources`, `cluster/status`, `cluster/ceph/status`, `cluster/nextid` (VM and container ids, sent as a string as PVE does), `access/permissions` (what the user holds, from `pve.grant`);
+- per node: `qemu` (the VMs of the node, those the user may audit), `tasks`, `tasks/{upid}/status`, `tasks/{upid}/log`, `storage/{s}/download-url`, `storage/{s}/upload`;
 - per VM: `status/current`, `status/{start,stop,shutdown,reboot,reset,suspend,resume}`, `config` (GET, PUT, and POST as a task), `pending`, `termproxy`, `vncproxy`, `vncwebsocket`, `agent/{command}` (every command in the schema), `monitor`;
 - per container (`lxc.py`): the list and create, destroy, `status/current`, `status/{start,stop,shutdown,reboot,suspend,resume}`, `config` (GET and PUT), `pending`, `clone`, `template`, `migrate` (GET and POST), `resize`, `interfaces`, `snapshot` (list, create, delete, `rollback`, and each snapshot's `config`).
 
@@ -193,7 +193,21 @@ For a new PVE release:
 
 3. **Diff.** `python tools/compare_real.py diff shape.json` starts a fake in-process with those counts (it needs the `crypto` extra), records it the same way and lists, per method, status differences, keys missing from the fake, extra keys and type differences. `--against other.json` compares two shape files instead. The exit status is 0 unless `--strict` is given and a difference was found. `python tools/compare_real.py --self-test` records a fake and diffs it against itself.
 
-Limits: only reads are covered, so writes, tasks and most error paths need a disposable PVE (a later phase). A token with a narrow role gets `403` for some methods, which shows as a status difference. Keys the real PVE returns but the schema does not document are folded into `<key>`, so they do not show as missing keys.
+Limits: only reads are covered, so writes, tasks and most error paths need a disposable PVE (a later phase). Keys the real PVE returns but the schema does not document are folded into `<key>`, so they are counted apart (`undocumented`) and not as missing keys.
+
+### Same rights, and what is not a defect
+
+`record` also asks `GET /access/permissions` and keeps the **names** of the privileges the token holds (the `privileges` list of the shape file; no path, user or role is stored, and the self-check rejects anything that is not a known privilege name, sorted). `diff` then runs the fake as a user that holds exactly those privileges on `/`, so a method that is refused to the real token (`403`) is refused to the fake too, and the two compare like for like. A token that holds every privilege, or a file with no record of them, runs as root; `--as-root` forces root. A file recorded before this existed is read too: the names are taken from the shape of the `/access/permissions` answer.
+
+A difference is a defect when the real PVE always sends a key the fake leaves out, or sends another type. These categories are **not** defects, and the report does not count them as such:
+
+- **Keys that depend on the object.** The config of a VM or container (`net0`, `ide2`, `ciuser`, ...), the options of a storage of one type (`server`, `pool`, `path`), the privileges a role holds, the volumes of a storage: which keys exist depends on what was set. `diff` leaves these out by default (the report counts them as "keys that depend on the object"; `--no-ignore-config-keys` counts them). The keys that are always sent (`digest`, and for a snapshot `snaptime` and `description`) are still compared, and so are types.
+- **Status `403`** that comes only from the recording token's limited role: this is why `diff` runs with the same privileges.
+- **Status `501`** for a method of a feature the recorded cluster does not have installed (SDN fabrics, route maps, custom CPU models, Ceph health mutes), and `500` or `400` that PVE gives for the sampled object itself (a user that cannot have two-factor data, a zone that is not an EVPN zone, a storage that cannot prune). The fake answers `200` with a sample there.
+- **Mixed types.** Where the real PVE sends a value as a boolean for one object and a number for another, a fake value of either type matches.
+- **Counts and values.** Only types and key names are compared, never a value, a list length or an order.
+
+The generic answers close the systematic gaps in `src/fakepve/shapes.py`: `OPTIONAL` names the properties the schema marks optional that PVE always sends, `HINTS` gives them plausible invented values (example names, addresses from RFC 5737), and `FIXUPS` adds what the schema does not describe and sets the types PVE sends where its schema says another (`DEVIATIONS`, which the schema test tolerates, lists them). The hand-built answers (`nodes`, `cluster/resources`, VM and container status and lists) fill what they lack from the same tables.
 
 ## Tests
 
@@ -202,7 +216,8 @@ Limits: only reads are covered, so writes, tasks and most error paths need a dis
 - `test_schema_api.py`: every method of the schema answers, and the answer matches `returns`; validation and permission behaviour of the generic handler.
 - `test_error_catalogue.py`: the catalogue, `errors_for`, triggering by name, in-task errors.
 - `test_scenarios.py` and `test_smoke.py`: the stateful behaviour and the scenarios.
-- `test_compare_real.py`: the comparison tool (above): sanitiser, GET-only guard, token handling, skip list, diff.
+- `test_compare_real.py` and `test_compare_privileges.py`: the comparison tool (above): sanitiser, GET-only guard, token handling, skip list, diff, the recorded privileges and the restricted user, the key filters.
+- `test_shapes.py`: the keys and types the answers carry that a real PVE always sends.
 - `test_docs.py`: the documentation (below). `test_examples.py`: the examples run.
 
 Lint with `ruff check .` and run `pytest` from the repository root, with `src` on the path (`PYTHONPATH=src`) when the package is not installed.
