@@ -153,8 +153,10 @@ async def test_rules_are_validated_like_pve(api, extra, field, message):
 
 
 async def test_rule_details_pve_derives(api):
-    await api.data('POST', CL + '/rules', {'type': 'in', 'action': 'ACCEPT', 'macro': 'ssh', 'source': '192.0.2.0/24'})
-    await api.data('POST', CL + '/rules', {'type': 'in', 'action': 'ACCEPT', 'proto': 'icmp', 'icmp-type': 'echo-request'})
+    await api.data('POST', CL + '/rules', {'type': 'in', 'action': 'ACCEPT', 'macro': 'ssh',
+                                           'source': '192.0.2.0/24'})
+    await api.data('POST', CL + '/rules', {'type': 'in', 'action': 'ACCEPT', 'proto': 'icmp',
+                                           'icmp-type': 'echo-request'})
     await api.data('POST', CL + '/rules', {'type': 'in', 'action': 'DROP', 'source': '2001:db8::/32', 'dport': ''})
     rules = await api.data('GET', CL + '/rules')
     assert (rules[0]['ipversion'], rules[0]['source']) == (6, '2001:db8::/32')

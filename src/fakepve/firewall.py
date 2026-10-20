@@ -508,7 +508,7 @@ class FirewallApi(StatefulRoutes):
             return conf, rules
         return conf, conf['rules']
 
-    def _verify(self, scope, rule, conf):
+    def _check_rule(self, scope, rule, conf):
         cluster = self.firewall_config('cluster')
         return verify_rule(rule, cluster, conf, scope)
 
@@ -537,7 +537,7 @@ class FirewallApi(StatefulRoutes):
     async def _fw_rule_create(self, scope, v, user):
         conf, rules = self._rules_of(scope, v)
         rule = self._copy_rule_data({}, v)
-        self._verify(scope, rule, conf)
+        self._check_rule(scope, rule, conf)
         if v.get('enable') is None:
             rule['enable'] = 0
         rules.insert(0, rule)
@@ -571,7 +571,7 @@ class FirewallApi(StatefulRoutes):
                 raise param_error(**{'delete': "unable to delete required property '{0}'".format(name)})
             rule.pop(name, None)
         rule.pop('ipversion', None)
-        self._verify(scope, rule, conf)
+        self._check_rule(scope, rule, conf)
         rules[pos] = rule
 
     async def _fw_rule_delete(self, scope, v, user):

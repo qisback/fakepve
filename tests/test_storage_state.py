@@ -49,8 +49,9 @@ async def test_config_errors_in_pves_words(api):
     assert await error(api, 'POST', '/storage', {'storage': 'two', 'type': 'lvm', 'vgname': 'v',
                                                  'content': 'iso'}) == \
         "storage does not support content type 'none'"
-    assert await error(api, 'PUT', '/storage/one', {'path': '/elsewhere'}) == \
-        "update storage failed: can't change value of fixed parameter 'path'"
+    # Fixed options are not in the update schema at all.
+    assert await error(api, 'PUT', '/storage/one', {'path': '/elsewhere'}, status=400) == {
+        'path': 'property is not defined in schema and the schema does not allow additional properties'}
     assert await error(api, 'PUT', '/storage/one', {'delete': 'path'}) == \
         "update storage failed: unable to delete required option 'path'"
     assert await error(api, 'PUT', '/storage/one', {'delete': 'bogus'}) == "update storage failed: no such option 'bogus'"
@@ -73,7 +74,7 @@ async def test_type_specific_options(api):
     await api.data('POST', '/storage', {'storage': 'smb', 'type': 'cifs', 'server': '192.0.2.11', 'share': 'vm',
                                         'username': 'u', 'password': 'secret'})
     assert 'password' not in await api.data('GET', '/storage/smb')
-    assert await error(api, 'POST', '/storage', {'storage': 'l', 'type': 'dir', 'path': '/a', 'password': 'x'}) == \
+    assert await error(api, 'POST', '/storage', {'storage': 'ld', 'type': 'dir', 'path': '/a', 'password': 'x'}) == \
         "unexpected property 'password'"
 
 
@@ -83,10 +84,10 @@ async def test_storage_permissions(pve, api):
     assert [s['storage'] for s in await ops.data('GET', '/storage')] == ['local']
     status, body = await ops.call('GET', '/storage/local')
     assert status == 403 and body['message'].strip() == 'Permission check failed (/storage/local, Datastore.Allocate)'
-    status, body = await ops.call('POST', '/storage', {'storage': 'x', 'type': 'dir', 'path': '/x'})
+    status, body = await ops.call('POST', '/storage', {'storage': 'xx', 'type': 'dir', 'path': '/x'})
     assert status == 403 and body['message'].strip() == 'Permission check failed (/storage, Datastore.Allocate)'
     pve.grant('ops@pve', '/storage', 'Datastore.Allocate')
-    assert (await ops.call('POST', '/storage', {'storage': 'x', 'type': 'dir', 'path': '/x'}))[0] == 200
+    assert (await ops.call('POST', '/storage', {'storage': 'xx', 'type': 'dir', 'path': '/x'}))[0] == 200
 
 
 # ----------------------------------------------------------- node status

@@ -56,7 +56,7 @@ async def test_member_errors_and_moving(pve, api):
         'update pools failed: VM 101 is not a pool member'
     assert await error(api, 'PUT', '/pools/nope', {'vms': '100'}) == "update pools failed: pool 'nope' does not exist"
     # A failed update changes nothing, whatever came before the failure.
-    assert await error(api, 'PUT', '/pools/ops', {'comment': 'x', 'vms': '100'}) .startswith('update pools failed')
+    assert (await error(api, 'PUT', '/pools/ops', {'comment': 'x', 'vms': '100'})).startswith('update pools failed')
     assert (await api.data('GET', '/pools'))[1] == {'poolid': 'ops'}
     await api.data('PUT', '/pools/ops', {'vms': '100', 'allow-move': 1})
     assert pve.pools == {'dev': set(), 'ops': {100}} and pve.vm(100).pool == 'ops'
