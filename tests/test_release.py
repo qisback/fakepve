@@ -54,10 +54,10 @@ def test_changelog_parses_and_its_newest_section_is_the_current_version_or_unrel
     assert not re.search('[–—]', read('CHANGELOG.md'))
 
 
-def test_unreleased_notes_are_not_empty():
-    notes = release.section_notes(read('CHANGELOG.md'), 'Unreleased')
-    if notes is not None:
-        assert notes.strip()
+def test_current_version_notes_are_not_empty():
+    # [Unreleased] is legitimately empty straight after a release; the current version's section is not.
+    notes = release.section_notes(read('CHANGELOG.md'), fakepve.__version__)
+    assert notes is not None and notes.strip()
 
 
 SAMPLE = '''# Changelog
