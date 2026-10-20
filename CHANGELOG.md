@@ -4,6 +4,8 @@ All notable changes to fakepve are recorded here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-20
+
 ### Added
 
 - Every guest agent command in the schema now answers (25 `agent/*` methods; 22 used to answer 501). The agent scenarios (`vm.agent` absent, `vm.agent_hangs`) apply to all of them, and `exec` and the file commands record the request on `vm.agent_requests` without running or touching anything.
@@ -54,5 +56,6 @@ First public release.
 - The self-signed certificate names `localhost`, `127.0.0.1` and the address it is served on (subject alternative names), so a client can verify it with the certificate as its CA.
 - Licensed under the GNU Affero General Public License, version 3 or later.
 
-[Unreleased]: https://github.com/qisback/fakepve/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/qisback/fakepve/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/qisback/fakepve/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/qisback/fakepve/releases/tag/v0.1.0
