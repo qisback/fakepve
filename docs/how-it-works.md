@@ -19,6 +19,7 @@ It stays one Python process on aiohttp. No PVE, QEMU, Ceph or corosync is run, a
 |---|---|
 | `fakepve/server.py` | `FakePve`: the aiohttp application, the middleware, and the hand-written routes (access, version, nodes, cluster, tasks, storage, VM status/config/agent/consoles). |
 | `fakepve/model.py` | `Model` (the state and the scenario methods) and `FakeVm`; `PveError` and `TaskError`. `FakePve` inherits from `Model`. |
+| `fakepve/lxc.py` | `FakeCt` and `LxcApi`, a mixin of `FakePve`: the container state and the stateful `lxc` routes. |
 | `fakepve/generic.py` | `GenericApi`, a mixin of `FakePve`: the catch-all route, which checks parameters and permissions against the schema and builds answers. |
 | `fakepve/schema.py` | The schema: path matching, parameter validation with PVE's wording, sample values for `returns`. |
 | `fakepve/errors.py` | The error catalogue: lookup by name, cross-cutting errors, placeholder filling. |
@@ -58,11 +59,12 @@ Every route is also served under `/api2/extjs`, with the same handlers, authenti
 - `access/ticket`, `access/password`, `version`;
 - `nodes`, `cluster/resources`, `cluster/status`, `cluster/ceph/status`;
 - per node: `tasks`, `tasks/{upid}/status`, `tasks/{upid}/log`, `storage`, `storage/{s}/content`, `storage/{s}/download-url`, `storage/{s}/upload`;
-- per VM: `status/current`, `status/{start,stop,shutdown,reboot,reset,suspend,resume}`, `config` (GET, PUT, and POST as a task), `pending`, `termproxy`, `vncproxy`, `vncwebsocket`, `agent/{command}` (every command in the schema), `monitor`.
+- per VM: `status/current`, `status/{start,stop,shutdown,reboot,reset,suspend,resume}`, `config` (GET, PUT, and POST as a task), `pending`, `termproxy`, `vncproxy`, `vncwebsocket`, `agent/{command}` (every command in the schema), `monitor`;
+- per container (`lxc.py`): the list and create, destroy, `status/current`, `status/{start,stop,shutdown,reboot,suspend,resume}`, `config` (GET and PUT), `pending`, `clone`, `template`, `migrate` (GET and POST), `resize`, `interfaces`, `snapshot` (list, create, delete, `rollback`, and each snapshot's `config`).
 
 They follow PVE's rules: config writes on a running VM go to `pending` unless the key is hot-pluggable; a CD-ROM media change applies at once; `reboot` and a cold start apply pending changes and `reset` does not; `PUT config` checks the `digest`, validates the boot order against the VM's devices, and checks the privilege each key needs (`hookscript` is root only); starting a running VM, or acting on a stopped one, gets PVE's messages; templates cannot be started.
 
-One route family is claimed as a whole, so it hides generic answers: `status/{action}` (an action without a `_do_` handler answers 501). `agent/{command}` is claimed too, but every command of the schema is answered there (see `agent.py`). The [endpoint reference](reference/endpoints.md) marks the methods affected as "routed to a hand-written handler that answers 501". The LXC endpoints are all generic: they validate and answer, but a container is not modelled.
+One route family is claimed as a whole, so it hides generic answers: `status/{action}` (an action without a `_do_` handler answers 501). `agent/{command}` is claimed too, but every command of the schema is answered there (see `agent.py`). The [endpoint reference](reference/endpoints.md) marks the methods affected as "routed to a hand-written handler that answers 501". The container routes are registered one by one, and each runs the schema's checks first (`answer`), so a request fails for the same reasons whether or not the container exists. The rest of the LXC endpoints are generic (see the gaps below).
 
 ## The generic handler
 
@@ -127,7 +129,7 @@ Handlers raise `PveError(status, message, errors)`. Named errors come from `erro
 Stated plainly, so nobody has to find them by surprise:
 
 - **Most of the API keeps no state.** Outside the hand-written routes a write succeeds and changes nothing, and a read returns a made-up value of the right shape. Create a VM through `POST /nodes/pve1/qemu` and it does not exist afterwards; add VMs with `pve.add_vm` or the guests file.
-- **Containers are not modelled.** The `lxc` endpoints validate and answer from the schema, but there are no containers to start, stop or list.
+- **Containers are modelled in part.** Create, destroy, power state, config with pending and hotplug rules, snapshots, clone, template, migrate, resize and interfaces keep state (`lxc.py`). Volumes are names only: there is no storage content, so a template file is not looked for (`pve.volume_exists` is the hook), and sizes are not counted against a storage. `restore` creates an empty container. `move_volume`, `remote_migrate`, `feature`, the console endpoints, `rrd` and the firewall stay generic; `GET /cluster/nextid` does not know containers; `ssh-public-keys` and `password` are accepted and dropped; a live (`online`) migration fails in its task, as PVE's does. Hotplug of a new mount point, a network change or a memory limit always succeeds: PVE's runtime failures (cgroup, veth) are not simulated.
 - **Guest agent commands are shapes, not behaviour.** `ping`, `get-osinfo` and `network-get-interfaces` read `vm.agent`, and `fsfreeze-*` keep a frozen flag. The rest answer plausible values, and `exec`, `exec-status`, `file-read` and `file-write` only record the request: nothing runs and no file is touched. `shutdown` and `suspend-*` do not change the VM.
 - **Two-factor logins stop at `NeedTFA`.** There is no second step to complete.
 - **Some formats are accepted without checking.** Property strings and the common named formats are validated ([formats](#formats)); the rest are listed there, and so are regular expressions that only Perl understands.

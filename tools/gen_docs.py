@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(ROOT, 'src'))
 from aiohttp.test_utils import make_mocked_request  # noqa: E402
 
 from fakepve import certs, errors, schema  # noqa: E402
-from fakepve import FakePve, FakeVm  # noqa: E402
+from fakepve import FakeCt, FakePve, FakeVm  # noqa: E402
 from fakepve.generic import NOT_TASKS  # noqa: E402
 from fakepve.server import API  # noqa: E402
 
@@ -215,6 +215,7 @@ def signatures_md():
            'Names exported by `fakepve`: ' + ', '.join('`{0}`'.format(n) for n in fakepve.__all__) + '.', '']
     out += class_section(FakePve, FakePve(host='127.0.0.2'), 'FakePve')
     out += [''] + class_section(FakeVm, FakeVm(100, 'vm'), 'FakeVm')
+    out += [''] + class_section(FakeCt, FakeCt(100, 'ct'), 'FakeCt')
     out += ['', '### Exceptions', '', '| Class | Meaning |', '|---|---|']
     for cls in (fakepve.PveError, fakepve.TaskError):
         init = cls.__init__ if '__init__' in vars(cls) else None

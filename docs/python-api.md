@@ -1,8 +1,8 @@
 # Python API
 
-Everything in fakepve is plain Python state you can read and set. This page explains every public attribute and method of `FakePve` and `FakeVm`, and the helper modules. The [signature index](#signature-index) at the end is generated from the code, so it is always complete; the explanations are written by hand, and a test checks that every public name in the index is explained here.
+Everything in fakepve is plain Python state you can read and set. This page explains every public attribute and method of `FakePve`, `FakeVm` and `FakeCt`, and the helper modules. The [signature index](#signature-index) at the end is generated from the code, so it is always complete; the explanations are written by hand, and a test checks that every public name in the index is explained here.
 
-Contents: [the fake](#the-fake) | [building the cluster](#building-the-cluster) | [VMs](#vms) | [time and tasks](#time-and-tasks) | [scenarios](#scenario-methods) | [access](#access) | [failures and errors](#failures-and-errors) | [what the fake records](#what-the-fake-records) | [limits](#limits) | [storages](#storages) | [internals](#internals) | [helper modules](#helper-modules) | [signature index](#signature-index)
+Contents: [the fake](#the-fake) | [building the cluster](#building-the-cluster) | [VMs](#vms) | [containers](#containers) | [time and tasks](#time-and-tasks) | [scenarios](#scenario-methods) | [access](#access) | [failures and errors](#failures-and-errors) | [what the fake records](#what-the-fake-records) | [limits](#limits) | [storages](#storages) | [internals](#internals) | [helper modules](#helper-modules) | [signature index](#signature-index)
 
 All durations are PVE seconds. The examples on this page run as they stand.
 
@@ -136,6 +136,63 @@ qemu/100 False ['scsi0']
 {'memory': 2048, 'name': 'web1'} {}
 True
 True
+```
+
+## Containers
+
+`pve.add_ct(vmid, name=None, node='pve1', status='stopped', ...)` adds an LXC container and returns it. It takes the arguments of `FakeCt` and creates the node if it is new, and raises `ValueError` with PVE's message (`CT 100 already exists on node 'pve1'`, or `VM 100 ...`) for an id that a VM or a container already has. `pve.cts` is the list, `pve.ct(vmid)` finds one (or `None`), and `pve.guest(vmid)` finds a VM or a container. Containers show in `/cluster/resources` (type `lxc`; `pve.ct_resources(user, kind)` builds those items) and in `/nodes/{node}/lxc`, and every container route keeps state: see [Containers in the scenarios](scenarios.md#containers).
+
+`FakeCt(vmid, name=None, node='pve1', status='stopped', config=None, pending=None, template=False, lock=None, pool=None, ostemplate=None, defaults=True)`. Unless `defaults` is false the config gets what a created container has: `hostname` (the `name`, else `CT<vmid>`), `ostype` and `arch` (worked out from `ostemplate`, else `debian` and `amd64`), `memory` 512, `swap` 512, a `rootfs` of 8G on `local-lvm`, and `unprivileged` 1.
+
+| Attribute | Meaning |
+|---|---|
+| `ct.vmid`, `ct.node` | Identity and place. Assigning `ct.node` moves the container (the old path then 500s). |
+| `ct.name` | The hostname: `config['hostname']`, which is also what `status/current` shows as `name`. |
+| `ct.status` | `running` or `stopped`. |
+| `ct.config` | The config as a dict: `rootfs`, `mp0`, `net0`, `memory`, `cores`, `lock`, `parent`, `template`, ... Values are numbers where PVE's are, else strings. |
+| `ct.pending` | Changes a running container waits to apply: key to new value, or `None` for a pending delete. A start, a reboot and a rollback apply them; a stop does not. |
+| `ct.snapshots` | Snapshot name to a dict: the config at the time plus `snaptime`, `description` and `snapstate`. |
+| `ct.template` | `True` for a template (a property over `config['template']`); it cannot be started. |
+| `ct.lock` | PVE's config lock (`backup`, `snapshot`, `migrate`, `create`, ...), a property over `config['lock']`: config writes fail with `CT is locked (name)`. |
+| `ct.pool` | The pool name, if any. |
+| `ct.stats` | Extra fields merged into `status/current`, overriding the defaults. |
+| `ct.started_at`, `ct.pid` | When it started, from which uptime is computed, and its fake init pid; `None` when stopped. |
+| `ct.checkpoint` | `True` after `suspend`: a `resume` needs it, as PVE needs the dump `lxc-checkpoint` leaves. |
+| `ct.shutdown_secs` | How long the container takes to stop after a shutdown. A shutdown task fails with `container did not stop` if this exceeds its `timeout` parameter (else `pve.shutdown_default_timeout`), unless `forceStop` is set; a reboot kills it after the timeout. |
+| `ct.start_secs`, `ct.stop_secs` | How long the start and stop tasks run. |
+| `ct.start_error` | The start task fails with this message. |
+| `ct.ha_state` | `None`, or the HA resource state, which makes the container HA managed. |
+| `ct.lock_holder`, `ct.lock_released` | Internal bookkeeping of the config lock. |
+
+Properties and methods: `ct.guest` is the id `/cluster/resources` shows (`lxc/100`); `ct.ha_managed` is true when `ha_state` is set; `ct.digest()` is the config digest (it covers pending changes and snapshots); `ct.volumes()` lists the config's volumes as `(key, mount dict)`; `ct.lock_error` is the message of a lock timeout.
+
+`pve.ct_secs` is a dict of PVE seconds each container task takes, all `0`: `create`, `clone`, `destroy`, `snapshot`, `delsnapshot`, `rollback`, `template`, `resize` and `migrate`. With a non-zero `time_scale` the task shows as running for that long, and the container's lock (`create`, `snapshot`, `disk` on a clone's source, `migrate`, `destroyed`) stays visible meanwhile.
+
+`pve.volume_exists(volid)` is the extension point for storage content: return `False` for an OS template that is not on its storage and a create task fails with `unable to create CT 100 - volume '...' does not exist`. The default returns `None`, which accepts every template.
+
+<!-- run -->
+```python
+from fakepve import FakePve
+
+pve = FakePve()
+ct = pve.add_ct(100, 'web1', status='running', ostemplate='debian-12-standard_12.2-1_amd64.tar.zst')
+ct.pending['memory'] = 1024
+print(ct.guest, ct.name, ct.config['ostype'], ct.config['rootfs'])
+print(pve.ct(100) is ct, pve.guest(100) is ct, pve.ct(999))
+try:
+    pve.add_ct(100, 'again')
+except ValueError as exc:
+    print(exc)
+ct.lock = 'backup'
+print(ct.config['lock'], ct.template, ct.digest() == ct.digest())
+```
+
+<!-- output -->
+```text
+lxc/100 web1 debian local-lvm:vm-100-disk-0,size=8G
+True True None
+CT 100 already exists on node 'pve1'
+backup False True
 ```
 
 ## Time and tasks
@@ -437,7 +494,7 @@ True []
 
 Generated by `tools/gen_docs.py` from the code. Do not edit between the markers; the explanations above and below are written by hand.
 
-Names exported by `fakepve`: `PORT`, `FakePve`, `FakeVm`, `PveError`, `TaskError`, `next_loopback`, `settle`.
+Names exported by `fakepve`: `PORT`, `FakeCt`, `FakePve`, `FakeVm`, `PveError`, `TaskError`, `next_loopback`, `settle`.
 
 ### FakePve
 
@@ -482,6 +539,11 @@ Constructor: `FakePve(user='root@pam', password='secret', host=None, port=8006)`
 | `revoke_tickets()` | Forget every login ticket: the next request gets 401. |
 | `store_file(storage, name, size)` | Add a file to a storage, or raise TaskError if it does not fit in 'avail'. |
 | `file_size(path)` | Size of a local file in bytes. |
+| `add_ct(*args, **kwargs)` | Add a FakeCt (arguments as FakeCt's) and its node; returns the container. |
+| `ct(vmid)` | The container with this id, or None. |
+| `guest(vmid)` | The VM or container with this id, or None. |
+| `volume_exists(volid)` | True or False if the fake knows whether a volume (an OS template) is in its storage, else None. |
+| `ct_resources(user, kind=None)` | The containers as /cluster/resources lists them. |
 | `resolve(request, prefix)` | The schema match of a request path, or None. |
 | `is_world(match, method)` | True if the method needs no login. |
 | `async answer(request, match, params, user, call=None)` | The data for a request: checked against the schema, then call(match, values) or a value from `returns`. |
@@ -525,6 +587,8 @@ Attributes after construction:
 | `requests` | `[]` |
 | `max_requests` | `10000` |
 | `failures` | `{}` |
+| `cts` | `[]` |
+| `ct_secs` | `{'create': 0, 'clone': 0, 'destroy': 0, 'snapshot': 0, 'delsnapshot': 0, 'rollback': 0,...` |
 | `host` | `'127.0.0.2'` |
 | `port` | `8006` |
 | `runner` | `None` |
@@ -570,6 +634,44 @@ Attributes after construction:
 | `agent_pid` | `1000` |
 | `agent_execs` | `{}` |
 | `acpi` | `True` |
+| `shutdown_secs` | `0` |
+| `start_secs` | `0` |
+| `stop_secs` | `0` |
+| `start_error` | `None` |
+| `ha_state` | `None` |
+| `lock_holder` | `None` |
+| `lock_released` | `None` |
+
+### FakeCt
+
+Constructor: `FakeCt(vmid, name=None, node='pve1', status='stopped', config=None, pending=None, template=False, lock=None, pool=None, ostemplate=None, defaults=True)`
+
+| Method | What it does |
+|---|---|
+| `name` (property) | The hostname, which is the name PVE lists. |
+| `lock` (property) | The config lock: backup, migrate, snapshot, create, ... |
+| `template` (property) | True for a template. |
+| `guest` (property) | The id as /cluster/resources shows it: lxc/<vmid>. |
+| `ha_managed` (property) | True if ha_state is set. |
+| `lock_error` (property) |  |
+| `digest()` | The config digest clients pass back to detect concurrent changes. |
+| `volumes(cfg=None)` | (key, mount dict) of the config's volumes, not bind or device mounts. |
+
+Attributes after construction:
+
+| Attribute | Initial value |
+|---|---|
+| `vmid` | `100` |
+| `node` | `'pve1'` |
+| `status` | `'stopped'` |
+| `config` | `{'hostname': 'ct', 'ostype': 'debian', 'arch': 'amd64', 'memory': 512, 'swap': 512, 'ro...` |
+| `pending` | `{}` |
+| `snapshots` | `{}` |
+| `pool` | `None` |
+| `stats` | `{}` |
+| `started_at` | `None` |
+| `pid` | `None` |
+| `checkpoint` | `False` |
 | `shutdown_secs` | `0` |
 | `start_secs` | `0` |
 | `stop_secs` | `0` |

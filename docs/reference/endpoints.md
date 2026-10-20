@@ -4,8 +4,8 @@
 
 Every path and method of the PVE API schema that fakepve answers, under `/api2/json`: 680 methods on 449 paths.
 
-- **stateful (hand-written)**: 55 methods keep state and follow PVE's rules (see [How it works](../how-it-works.md)).
-- **generic (from the schema)**: 625 methods check parameters and permissions as the schema states them and answer with a value of the right shape. A write succeeds and changes nothing.
+- **stateful (hand-written)**: 80 methods keep state and follow PVE's rules (see [How it works](../how-it-works.md)).
+- **generic (from the schema)**: 600 methods check parameters and permissions as the schema states them and answer with a value of the right shape. A write succeeds and changes nothing.
 - **routed to a hand-written handler that answers 501**: 0 methods whose route is claimed by a stateful family (VM `status/{action}`) but whose action is not modelled.
 
 For each method: **Access** is the permission rule from the schema (evaluated against `pve.grant`; root is always allowed), **Required** the parameters that must be sent (path parameters included), and **Errors** the names that `pve.fail(..., error=name)` accepts, from the [error catalogue](../errors.md). Errors marked "in the task" are raised in a PVE worker: the request succeeds and the task ends with the error.
@@ -2329,11 +2329,11 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/lxc`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: any logged-in user
   - Required: `node`
   - Errors: `parse_volume_unknown_type`
-- **POST**: generic (from the schema), starts a task
+- **POST**: stateful (hand-written)
   - Access: any logged-in user
   - Required: `node`, `ostemplate`, `vmid` (+43 optional)
   - Errors: `can_t_overwrite_running`, `permission_check_failed`, `pipe_requires_cli_environment`, `pipe_can_only_used_restore`, `restore_pipe_requires_rootfs_parameter`, `param_storage_storage_does_not`, `mount_points_configured_but_rootfs`, `only_root_can_pass_arbitrary`, `configuration_file_does_not_exist`, `protection_mode_enabled`, `permission_check_failed_mount_point`, `permission_check_failed_configuring_device`, `permission_check_failed_changing_feature`, `permission_check_failed_changing_feature_2`, `permission_check_failed_changing_hookscript`, `unable_use_volume_content_type`, `cannot_access_snippet_non_snippet`, `missing_privileges_access`, `storage_disabled`, `connection_check_storage_failed`, `storage_not_online`, `unable_delete_required_option`, `unable_delete_read_only_option`, `storage_does_not_allow_content`, `unable_modify_read_only_option`, `mtu_size_bigger_than_bridge`, `slaac_not_supported_host_managed`, `path_not_defined_passthrough_device`, `parse_volume_unknown_type`, `permission_check_failed_sys_modify`, `no_storage_id_specified`, `storage_does_not_exist`, `storage_not_available`, `reverse_iteration_only_supported_default`, `unable_parse_volume_id`, `invalid_map_entry_id_also`, `not_snippets_directory`, `script_does_not_exist`, `script_not_executable`, `bridge_does_not_exist`, `unexpeted_error_unable_parse_mtu`, `path_has_defined`
@@ -2341,7 +2341,7 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/lxc/{vmid}`
 
-- **DELETE**: generic (from the schema), starts a task
+- **DELETE**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Allocate
   - Required: `node`, `vmid` (+3 optional)
   - Errors: `unable_remove_used_ha_resources`, `configuration_file_does_not_exist`, `protection_mode_enabled`, `locked`, `failed_open_s_command_socket`, `did_not_stop`, `base_volume_still_use_linked`, `failed_remove_config_file`, `reverse_iteration_only_supported_default`
@@ -2352,7 +2352,7 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/lxc/{vmid}/clone`
 
-- **POST**: generic (from the schema), starts a task
+- **POST**: stateful (hand-written)
   - Access: (/vms/{vmid}: VM.Clone and (/vms/{newid}: VM.Allocate or /pool/{pool}: VM.Allocate))
   - Required: `newid`, `node`, `vmid` (+8 optional)
   - Errors: `can_t_clone_non_shared`, `lost_create_config_lock_aborting`, `storage_disabled`, `no_storage_id_specified`, `storage_does_not_exist`, `configuration_file_does_not_exist`, `storage_not_available`, `unable_remove_used_ha_resources`, `failed_open_s_command_socket`, `did_not_stop`, `base_volume_still_use_linked`, `failed_remove_config_file`, `locked`
@@ -2360,11 +2360,11 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/lxc/{vmid}/config`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `node`, `vmid` (+2 optional)
   - Errors: `param_snapshot_cannot_use_snapshot`, `snapshot_does_not_exist`, `configuration_file_does_not_exist`
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Disk or VM.Config.CPU or VM.Config.Memory or VM.Config.Network or VM.Config.Options
   - Required: `node`, `vmid` (+35 optional)
   - Errors: `no_options_specified`, `param_revert_unknown_option`, `param_revert_you_can_t`, `param_delete_unknown_option`, `param_delete_you_can_t`, `param_delete_you_can_t_2`, `cannot_add_non_replicatable_volume`, `param_value`, `configuration_file_does_not_exist`, `locked`, `permission_check_failed_mount_point`, `permission_check_failed_configuring_device`, `permission_check_failed_changing_feature`, `permission_check_failed_changing_feature_2`, `permission_check_failed_changing_hookscript`, `no_storage_id_specified`, `storage_does_not_exist`, `unable_delete_required_option`, `unable_delete_read_only_option`, `storage_does_not_allow_content`, `unable_modify_read_only_option`, `mtu_size_bigger_than_bridge`, `slaac_not_supported_host_managed`, `path_not_defined_passthrough_device`, `missing_arch_internal_error`, `missing_ostype_internal_error`, `path_not_defined_passthrough_device_2`, `missing_rootfs_configuration`, `mtu_size_bigger_than_bridge_2`, `slaac_not_supported_host_managed_2`, `parse_volume_unknown_type`, `unable_use_volume_content_type`, `cannot_access_snippet_non_snippet`, `missing_privileges_access`, `only_root_can_pass_arbitrary`, `permission_check_failed_sys_modify`, `reverse_iteration_only_supported_default`, `unable_parse_volume_id`, `protection_mode_enabled`, `invalid_map_entry_id_also`, `not_snippets_directory`, `script_does_not_exist`, `script_not_executable`, `bridge_does_not_exist`, `unexpeted_error_unable_parse_mtu`, `path_has_defined`, `mknod_feature_requested_but_kernel`
@@ -2499,17 +2499,17 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/lxc/{vmid}/interfaces`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `node`, `vmid`
 
 ### `/nodes/{node}/lxc/{vmid}/migrate`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Migrate
   - Required: `node`, `vmid` (+1 optional)
   - Errors: `configuration_file_does_not_exist`, `locked`
-- **POST**: generic (from the schema), starts a task
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Migrate
   - Required: `node`, `target`, `vmid` (+5 optional)
   - Errors: `param_target_target_local`, `can_t_migrate_running_without`, `param_target_storage_failed_parse`, `configuration_file_does_not_exist`, `storage_does_not_support_rootdirs`, `storage_disabled`, `no_storage_id_specified`, `storage_does_not_exist`
@@ -2540,7 +2540,7 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/lxc/{vmid}/pending`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `node`, `vmid`
   - Errors: `configuration_file_does_not_exist`
@@ -2555,7 +2555,7 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/lxc/{vmid}/resize`
 
-- **PUT**: generic (from the schema), starts a task
+- **PUT**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Disk
   - Required: `disk`, `node`, `size`, `vmid` (+1 optional)
   - Errors: `invalid_size_string`, `no_options_specified`, `can_t_resize_mount_point`, `could_not_determine_current_size`, `unable_shrink_disk_size`, `disk_already_specified_size`, `internal_error_running_but_mount`, `configuration_file_does_not_exist`, `locked`, `permission_check_failed_mount_point`, `permission_check_failed_configuring_device`, `permission_check_failed_changing_feature`, `permission_check_failed_changing_feature_2`, `permission_check_failed_changing_hookscript`, `parse_volume_unknown_type`, `resize_file_device_not_possible`, `unable_parse_volume_id`, `unable_use_volume_content_type`, `cannot_access_snippet_non_snippet`, `missing_privileges_access`, `only_root_can_pass_arbitrary`, `permission_check_failed_sys_modify`, `invalid_size`, `failed_parse_mount_point_idmap`, `no_storage_id_specified`, `storage_does_not_exist`, `internal_error_hints_not_valid`
@@ -2576,11 +2576,11 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/lxc/{vmid}/snapshot`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `node`, `vmid`
   - Errors: `configuration_file_does_not_exist`
-- **POST**: generic (from the schema), starts a task
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Snapshot
   - Required: `node`, `snapname`, `vmid` (+1 optional)
   - Errors: `unable_use_snapshot_name_current`, `unable_use_snapshot_name_vzdump`
@@ -2588,7 +2588,7 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/lxc/{vmid}/snapshot/{snapname}`
 
-- **DELETE**: generic (from the schema), starts a task
+- **DELETE**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Snapshot
   - Required: `node`, `snapname`, `vmid` (+1 optional)
   - Errors: `snapshot_does_not_exist`, `encountered_invalid_lock_expected`, `you_can_t_delete_snapshot`, `configuration_file_does_not_exist`, `snapshot_needed_replication_job_run`, `too_many_unused_volumes_please`
@@ -2599,18 +2599,18 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/lxc/{vmid}/snapshot/{snapname}/config`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Snapshot or VM.Snapshot.Rollback or VM.Audit
   - Required: `node`, `snapname`, `vmid`
   - Errors: `snapshot_does_not_exist`, `configuration_file_does_not_exist`
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Snapshot
   - Required: `node`, `snapname`, `vmid` (+1 optional)
   - Errors: `snapshot_does_not_exist`, `configuration_file_does_not_exist`, `locked`
 
 ### `/nodes/{node}/lxc/{vmid}/snapshot/{snapname}/rollback`
 
-- **POST**: generic (from the schema), starts a task
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Snapshot or VM.Snapshot.Rollback
   - Required: `node`, `snapname`, `vmid` (+1 optional)
   - Errors in the task: `you_can_t_rollback_if`, `snapshot_does_not_exist`, `unable_rollback_incomplete_snapshot_snapstate`, `unable_rollback_running`, `got_wrong_lock`, `configuration_file_does_not_exist`, `locked`, `too_many_unused_volumes_please`
@@ -2631,14 +2631,14 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/lxc/{vmid}/status/current`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `node`, `vmid`
   - Errors: `configuration_file_does_not_exist`, `parse_volume_unknown_type`
 
 ### `/nodes/{node}/lxc/{vmid}/status/reboot`
 
-- **POST**: generic (from the schema), starts a task
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.PowerMgmt
   - Required: `node`, `vmid` (+1 optional)
   - Errors: `not_running`
@@ -2646,14 +2646,14 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/lxc/{vmid}/status/resume`
 
-- **POST**: generic (from the schema), starts a task
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.PowerMgmt
   - Required: `node`, `vmid`
   - Errors: `already_running`
 
 ### `/nodes/{node}/lxc/{vmid}/status/shutdown`
 
-- **POST**: generic (from the schema), starts a task
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.PowerMgmt
   - Required: `node`, `vmid` (+2 optional)
   - Errors: `not_running`
@@ -2661,7 +2661,7 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/lxc/{vmid}/status/start`
 
-- **POST**: generic (from the schema), starts a task
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.PowerMgmt
   - Required: `node`, `vmid` (+2 optional)
   - Errors: `param_skiplock_only_root_may`, `already_running`
@@ -2669,7 +2669,7 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/lxc/{vmid}/status/stop`
 
-- **POST**: generic (from the schema), starts a task
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.PowerMgmt
   - Required: `node`, `vmid` (+2 optional)
   - Errors: `param_skiplock_only_root_may`, `not_running`, `param_overrule_shutdown_not_applicable`
@@ -2677,7 +2677,7 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/lxc/{vmid}/status/suspend`
 
-- **POST**: generic (from the schema), starts a task
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.PowerMgmt
   - Required: `node`, `vmid`
   - Errors: `not_running`
@@ -2685,7 +2685,7 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/lxc/{vmid}/template`
 
-- **POST**: generic (from the schema)
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Allocate
   - Required: `node`, `vmid`
   - Errors: `unable_create_template_because_contains`, `you_can_t_convert_template`, `you_can_t_convert_template_2`, `configuration_file_does_not_exist`, `locked`

@@ -129,9 +129,10 @@ def test_endpoint_reference_covers_every_method():
 
 
 def public_names():
-    from fakepve import FakePve, FakeVm
+    from fakepve import FakeCt, FakePve, FakeVm
     names = set()
-    for cls, instance in ((FakePve, FakePve(host='127.0.0.2')), (FakeVm, FakeVm(100, 'vm'))):
+    for cls, instance in ((FakePve, FakePve(host='127.0.0.2')), (FakeVm, FakeVm(100, 'vm')),
+                          (FakeCt, FakeCt(100, 'ct'))):
         names |= set(gen_docs.members(cls))
         names |= set(n for n in vars(instance) if not n.startswith('_'))
     return names

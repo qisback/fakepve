@@ -2,7 +2,7 @@
 
 A cookbook of the things a real cluster does to a client, and how to make the fake do them. Each recipe is a runnable snippet followed by exactly what the client sees. The snippets and their output are run by the test suite, so they cannot drift from the code.
 
-Contents: [setup](#setup) | [shutdowns](#shutdowns-and-slow-guests) | [start and stop](#start-stop-and-task-failures) | [locks](#locks) | [backup](#backup) | [migration](#migration) | [HA](#high-availability) | [quorum](#lost-quorum) | [node offline](#node-offline) | [network](#slow-and-flaky-networks) | [Ceph](#ceph) | [storage](#storage-full) | [permissions](#permissions) | [tickets](#expired-tickets-and-tokens) | [TFA](#two-factor-authentication) | [fail](#arbitrary-failures) | [catalogue](#errors-by-catalogue-name) | [guest agent](#guest-agent) | [pending](#pending-changes)
+Contents: [setup](#setup) | [shutdowns](#shutdowns-and-slow-guests) | [start and stop](#start-stop-and-task-failures) | [locks](#locks) | [backup](#backup) | [migration](#migration) | [HA](#high-availability) | [quorum](#lost-quorum) | [node offline](#node-offline) | [network](#slow-and-flaky-networks) | [Ceph](#ceph) | [storage](#storage-full) | [permissions](#permissions) | [tickets](#expired-tickets-and-tokens) | [TFA](#two-factor-authentication) | [fail](#arbitrary-failures) | [catalogue](#errors-by-catalogue-name) | [guest agent](#guest-agent) | [pending](#pending-changes) | [containers](#containers)
 
 ## Setup
 
@@ -738,3 +738,90 @@ async with fake() as (pve, api):
 [{'key': 'memory', 'value': 1024, 'pending': '2048'}]
 2048 {}
 ```
+
+## Containers
+
+LXC containers keep state like VMs do: what a client writes it can read back, with PVE's rules and wording. `pve.add_ct` adds one (see [Containers](python-api.md#containers)); a client can also create one with `POST /nodes/pve1/lxc`. A create, like a clone, a snapshot or a destroy, is a task, and the container is visible (locked `create`) while it runs.
+
+A running container takes some changes at once (cores, memory, swap, the network, a new mount point, names and tags) and keeps the rest pending until the next start or reboot, as `pct set` does. A stopped container takes them all.
+
+<!-- run -->
+```python
+async with fake() as (pve, api):
+    status, body = await api.call('POST', '/nodes/pve1/lxc', {
+        'vmid': 100, 'hostname': 'web1', 'memory': 512, 'rootfs': 'local-lvm:8',
+        'ostemplate': 'local:vztmpl/debian-12-standard_12.2-1_amd64.tar.zst',
+        'net0': 'name=eth0,bridge=vmbr0,ip=192.0.2.10/24'})
+    print(status, (await api.wait(body['data']))['exitstatus'])
+    _, body = await api.call('POST', '/nodes/pve1/lxc/100/status/start')
+    await api.wait(body['data'])
+    await api.call('PUT', '/nodes/pve1/lxc/100/config', {'memory': 1024, 'searchdomain': 'example.test'})
+    _, cfg = await api.call('GET', '/nodes/pve1/lxc/100/config')
+    print({k: cfg['data'][k] for k in ('hostname', 'memory', 'rootfs', 'ostype')})
+    _, now = await api.call('GET', '/nodes/pve1/lxc/100/config', {'current': 1})
+    print({k: now['data'].get(k) for k in ('memory', 'searchdomain')})
+    _, pending = await api.call('GET', '/nodes/pve1/lxc/100/pending')
+    print([p for p in pending['data'] if p['key'] == 'searchdomain'])
+    _, body = await api.call('POST', '/nodes/pve1/lxc/100/status/reboot')
+    await api.wait(body['data'])
+    print(pve.ct(100).config['searchdomain'], pve.ct(100).pending)
+```
+
+<!-- output -->
+```text
+200 OK
+{'hostname': 'web1', 'memory': 1024, 'rootfs': 'local-lvm:vm-100-disk-0,size=8G', 'ostype': 'debian'}
+{'memory': 1024, 'searchdomain': None}
+[{'key': 'searchdomain', 'pending': 'example.test'}]
+example.test {}
+```
+
+A shutdown that outlasts its timeout ends with `container did not stop` (`forceStop=1` kills the container instead), and a start can be made to fail:
+
+<!-- run -->
+```python
+async with fake(time_scale=0.01) as (pve, api):
+    ct = pve.add_ct(100, 'web1', status='running')
+    ct.shutdown_secs = 90
+    _, body = await api.call('POST', '/nodes/pve1/lxc/100/status/shutdown')
+    print((await api.wait(body['data']))['exitstatus'], '| CT is', ct.status)
+    _, body = await api.call('POST', '/nodes/pve1/lxc/100/status/shutdown', {'forceStop': 1})
+    print((await api.wait(body['data']))['exitstatus'], '| CT is', ct.status)
+    ct.start_error = 'lxc_init: 845 Failed to initialize container "100"'
+    _, body = await api.call('POST', '/nodes/pve1/lxc/100/status/start')
+    print((await api.wait(body['data']))['exitstatus'], '| CT is', ct.status)
+    show(await api.call('POST', '/nodes/pve1/lxc/100/status/stop'))
+```
+
+<!-- output -->
+```text
+container did not stop | CT is running
+OK | CT is stopped
+lxc_init: 845 Failed to initialize container "100" | CT is stopped
+500 {"data": null, "message": "CT 100 not running\n"}
+```
+
+Snapshots, clones, migrations and the rest hold the container's `lock` for as long as `pve.ct_secs` says, and refuse changes meanwhile:
+
+<!-- run -->
+```python
+async with fake(time_scale=0.01) as (pve, api):
+    pve.ct_secs['snapshot'] = 30
+    pve.add_ct(100, 'web1')
+    _, body = await api.call('POST', '/nodes/pve1/lxc/100/snapshot', {'snapname': 'before'})
+    show(await api.call('PUT', '/nodes/pve1/lxc/100/config', {'onboot': 1}))
+    print((await api.wait(body['data']))['exitstatus'])
+    _, snaps = await api.call('GET', '/nodes/pve1/lxc/100/snapshot')
+    print([s['name'] for s in snaps['data']])
+    show(await api.call('PUT', '/nodes/pve1/lxc/100/config', {'onboot': 1}))
+```
+
+<!-- output -->
+```text
+500 {"data": null, "message": "CT is locked (snapshot)\n"}
+OK
+['before', 'current']
+200 {"data": null}
+```
+
+What works as it does for VMs: `pve.fail(..., error=name)` on the container routes takes the `lxc` catalogue's names; `lose_quorum`, `set_node_offline`, `hold_config_lock`, `backup`, `migrate` and `snapshot_lock` take a container's id; and permissions follow PVE's `check_ct_modify_config_perm` (`VM.Config.CPU`, `Memory`, `Network`, `Disk` and `Options` by option, `Datastore.AllocateSpace` for a new volume, `Sys.Modify` for a privileged container, root only for bind mounts, device passthrough and hookscripts).
