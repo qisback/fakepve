@@ -147,9 +147,13 @@ class Model(object):
         self.acl = None
         # Pools: name -> {vmids}.
         self.pools = {}
+        # Pool comments and storage members: name -> {'comment': str or None, 'storage': {ids}} (see pools.py).
+        self.pool_info = {}
+        # Storages: name -> storage.cfg options, plus the fake's own keys (see storage.py).
         self.storages = {'local': {'type': 'dir', 'active': 1, 'content': 'iso,vztmpl,backup', 'files': set(),
-                                   'avail': 50 * 1024 ** 3},
-                         'local-lvm': {'type': 'lvmthin', 'active': 1, 'content': 'images,rootdir', 'files': set()}}
+                                   'path': '/var/lib/vz', 'avail': 50 * 1024 ** 3},
+                         'local-lvm': {'type': 'lvmthin', 'active': 1, 'content': 'images,rootdir', 'files': set(),
+                                       'vgname': 'pve', 'thinpool': 'data'}}
         # Network conditions: latency and jitter (PVE seconds), per node
         # latency, and the share of requests dropped (connection reset) or
         # hung (no answer for hang_secs). seed makes the randomness repeatable.
@@ -309,6 +313,9 @@ class Model(object):
         if path.startswith('/vms/'):
             vmid = int(path.split('/')[2])
             paths += ['/vms'] + ['/pool/' + name for name, ids in self.pools.items() if vmid in ids]
+        elif path.startswith('/storage/'):
+            sid = path.split('/')[2]
+            paths += ['/pool/' + name for name, meta in self.pool_info.items() if sid in meta['storage']]
         for user_id in (user, user.split('!')[0]):
             for granted, privs in self.acl.get(user_id, []):
                 if priv in privs and (granted == '/' or any(p == granted or p.startswith(granted + '/')
@@ -486,12 +493,16 @@ class Model(object):
         """Forget every login ticket: the next request gets 401."""
         self.tickets = {}
 
-    def store_file(self, storage, name, size):
-        """Add a file to a storage, or raise TaskError if it does not fit in 'avail'."""
+    def store_file(self, storage, name, size, content='iso'):
+        """Add a file (an ISO, by default) to a storage, or raise TaskError if it does not fit in 'avail'."""
         store = self.storages[storage]
         if size > store.get('avail', float('inf')):
             raise TaskError('unable to write to storage {0!r}: No space left on device'.format(storage))
-        store['files'].add(name)
+        if content == 'iso':
+            store['files'].add(name)
+        store.setdefault('volumes', {})['{0}/{1}'.format(content, name)] = {
+            'content': content, 'size': size, 'ctime': int(time.time()),
+            'format': 'iso' if content == 'iso' else name.rsplit('.', 1)[-1]}
         if 'avail' in store:
             store['avail'] -= size
 

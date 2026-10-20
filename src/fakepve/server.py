@@ -30,9 +30,12 @@ from aiohttp import web
 from . import agent as guest_agent
 from . import errors
 from . import schema as pve_schema
+from .firewall import FirewallApi
 from .generic import GenericApi
 from .lxc import FakeCt, LxcApi
 from .model import FakeVm, Model, PveError, TaskError
+from .pools import PoolsApi
+from .storage import StorageApi, StorageTransfer
 
 PORT = 8006  # PVE's API port; clients often assume it
 _hostseq = itertools.count(2)
@@ -149,7 +152,7 @@ class BodyTimeout(Exception):
     """The client stopped sending its request body."""
 
 
-class FakePve(GenericApi, LxcApi, Model):
+class FakePve(StorageTransfer, StorageApi, PoolsApi, FirewallApi, GenericApi, LxcApi, Model):
     def __init__(self, user='root@pam', password='secret', host=None, port=PORT):
         super().__init__(user, password)
         self.host = host or next_loopback()
@@ -186,8 +189,6 @@ class FakePve(GenericApi, LxcApi, Model):
             r.add_get(node + '/tasks', self._task_list)
             r.add_get(node + '/tasks/{upid}/status', self._task_status)
             r.add_get(node + '/tasks/{upid}/log', self._task_log)
-            r.add_get(node + '/storage', self._storage_list)
-            r.add_get(node + '/storage/{storage}/content', self._storage_content)
             r.add_post(node + '/storage/{storage}/download-url', self._download_url)
             r.add_post(node + '/storage/{storage}/upload', self._upload)
             self._lxc_routes(r, node)
@@ -204,6 +205,7 @@ class FakePve(GenericApi, LxcApi, Model):
             r.add_get(qemu + '/agent/{command}', self._agent)
             r.add_post(qemu + '/agent/{command}', self._agent)
             r.add_post(qemu + '/monitor', self._monitor)
+        self._register_stateful(r, FORMATS)
         # Last, so the routes above keep priority: the rest of the schema.
         for p in FORMATS:
             r.add_route('*', p + '/{tail:.*}', self._generic)
@@ -465,9 +467,7 @@ class FakePve(GenericApi, LxcApi, Model):
                              'status': 'online' if state.get('online', True) else 'offline'})
         if kind in (None, 'storage'):
             for node in sorted(self.nodes):
-                for name, store in self.storages.items():
-                    data.append({'id': 'storage/{0}/{1}'.format(node, name), 'type': 'storage', 'node': node,
-                                 'storage': name, 'status': 'available' if store.get('active') else 'unknown'})
+                data.extend(item for item in (self.storage_resource(node, name) for name in self.storages) if item)
         return ok(data)
 
     async def _cluster_status(self, request):
@@ -538,86 +538,6 @@ class FakePve(GenericApi, LxcApi, Model):
         lines = self._get_task(request)['log']
         start, limit = p.get('start', 0), p.get('limit', 50)
         return ok([{'n': n + 1, 't': t} for n, t in enumerate(lines)][start:start + limit])
-
-    # -------------------------------------------------------------- storage
-
-    async def _storage_list(self, request):
-        user = request[USER]
-        content = request.query.get('content')
-        data = []
-        for name, store in self.storages.items():
-            if content and content not in store.get('content', ''):
-                continue
-            if not (self.allowed(user, '/storage/' + name, 'Datastore.Audit')
-                    or self.allowed(user, '/storage/' + name, 'Datastore.AllocateSpace')):
-                continue
-            data.append({'storage': name, 'type': store.get('type', 'dir'), 'content': store.get('content', ''),
-                         'active': store.get('active', 1), 'enabled': 1, 'shared': store.get('shared', 0)})
-        return ok(data)
-
-    def _storage(self, request):
-        name = request.match_info['storage']
-        if name not in self.storages:
-            raise PveError(500, "storage '{0}' does not exist".format(name))
-        store = self.storages[name]
-        if store.get('type') == 'rbd' and self.ceph['down']:
-            raise PveError(500, 'rbd error: rbd: listing images failed: (110) Connection timed out')
-        if not store.get('active', 1):
-            raise PveError(500, "storage '{0}' is not online".format(name))
-        return name, store
-
-    async def _storage_content(self, request):
-        name, store = self._storage(request)
-        self.require(request[USER], '/storage/' + name, 'Datastore.Audit')
-        return ok([{'volid': '{0}:iso/{1}'.format(name, f), 'content': 'iso', 'format': 'iso'}
-                   for f in sorted(store['files'])])
-
-    async def _download_url(self, request):
-        name, store = self._storage(request)
-        user = request[USER]
-        self.require(user, '/storage/' + name, 'Datastore.AllocateTemplate')
-        self.require(user, '/', 'Sys.Audit')
-        self.require(user, '/', 'Sys.Modify')
-        p = await params(request)
-        # size is the fake's own parameter: how large the download pretends to be.
-        size = int_param(p, 'size', 1024 ** 2, minimum=0)
-        p = self._verify(request, p, drop=('size',))
-
-        async def body():
-            await self.pause(5)
-            self.store_file(name, p['filename'], size)
-        return ok(await self.task(request.match_info['node'], 'download', name, user, body,
-                                  log=['downloading {0} to {1}'.format(p.get('url'), p.get('filename'))]))
-
-    async def _upload(self, request):
-        name, store = self._storage(request)
-        user = request[USER]
-        self.require(user, '/storage/' + name, 'Datastore.AllocateTemplate')
-        body = await request.read()
-        try:
-            boundary = request.content_type == 'multipart/form-data' and \
-                request.headers['Content-Type'].split('boundary=', 1)[1]
-            if not boundary or int(request.headers.get('Content-Length', -1)) != len(body):
-                raise ValueError('not a complete multipart body')
-            fields = {}
-            for part in body.split(b'--' + boundary.encode())[1:-1]:
-                head, _, data = part[2:-2].partition(b'\r\n\r\n')
-                disposition = head.decode().split('\r\n')[0]
-                field = disposition.split('name="', 1)[1].split('"', 1)[0]
-                if 'filename="' in disposition:
-                    fields['filename'] = disposition.split('filename="', 1)[1].split('"', 1)[0]
-                    fields['data'] = data
-                else:
-                    fields[field] = data.decode()
-        except (IndexError, ValueError):  # UnicodeDecodeError is one
-            raise PveError(400, 'bad upload request') from None
-        if fields.get('content') != 'iso':
-            raise PveError(400, 'Parameter verification failed.', {'content': 'value not allowed'})
-        self.uploaded = fields
-
-        async def body_():
-            self.store_file(name, fields['filename'], len(fields.get('data', b'')))
-        return ok(await self.task(request.match_info['node'], 'imgcopy', '', user, body_))
 
     # ------------------------------------------------------------------ VMs
 
