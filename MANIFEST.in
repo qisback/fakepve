@@ -1,0 +1,8 @@
+include CHANGELOG.md SECURITY.md Dockerfile properdocs.yml
+graft docs
+graft examples
+graft tests
+graft tools
+prune .forgejo
+prune .github
+global-exclude __pycache__ *.py[cod]

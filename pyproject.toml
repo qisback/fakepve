@@ -1,25 +1,57 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "fakepve"
 version = "0.1.0"
 description = "A lightweight fake Proxmox VE API for testing Proxmox clients"
-readme = "README.md"
+readme = {file = "README.md", content-type = "text/markdown"}
 requires-python = ">=3.10"
-license = {text = "AGPL-3.0-or-later"}
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
 authors = [{name = "Laurence Horrocks-Barlow"}]
+keywords = ["proxmox", "pve", "fake", "mock", "testing", "pytest"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Framework :: AsyncIO",
+    "Framework :: Pytest",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Software Development :: Testing :: Mocking",
+    "Topic :: System :: Systems Administration",
+]
 # Floors are the oldest releases without a published advisory (checked with pip-audit); see SECURITY.md.
 dependencies = ["aiohttp>=3.14.3"]
 
 [project.optional-dependencies]
 # Self-signed certificates and VNC authentication.
 crypto = ["cryptography>=50.0.0"]
+# The pytest fixtures (fakepve, fakepve_session, ...).
+pytest = ["cryptography>=50.0.0", "pytest"]
 test = ["cryptography>=50.0.0", "pytest", "pytest-asyncio"]
+
+[project.urls]
+Homepage = "https://qisback.github.io/fakepve/"
+Source = "https://github.com/qisback/fakepve"
+Changelog = "https://github.com/qisback/fakepve/blob/main/CHANGELOG.md"
+Issues = "https://github.com/qisback/fakepve/issues"
+Funding = "https://ko-fi.com/qisback"
 
 [project.scripts]
 fakepve = "fakepve.__main__:main"
+
+[project.entry-points.pytest11]
+fakepve = "fakepve.pytest_plugin"
 
 [tool.setuptools.packages.find]
 where = ["src"]

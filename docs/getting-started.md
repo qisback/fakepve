@@ -8,6 +8,14 @@ Contents: [install](#install) | [run it](#run-it) | [first requests with curl](#
 
 fakepve needs Python 3.10 or later and aiohttp 3.14.3 or later (the oldest release without a published security advisory). `cryptography` is optional: it makes the self-signed certificate (so the command line needs it unless you bring your own certificate) and the VNC authentication of the console websocket.
 
+From PyPI:
+
+```console
+pip install fakepve            # aiohttp only
+pip install 'fakepve[crypto]'  # plus cryptography, for the certificate
+pip install 'fakepve[pytest]'  # the pytest fixtures (see [pytest](pytest.md))
+```
+
 From a checkout:
 
 ```console
@@ -15,13 +23,9 @@ pip install .            # aiohttp only
 pip install '.[crypto]'  # plus cryptography
 ```
 
-Straight from git, replacing the address with the repository's:
+To run it as a container instead, see [CI](ci.md#a-container): `docker run --rm -p 127.0.0.1:8006:8006 ghcr.io/qisback/fakepve`.
 
-```console
-pip install 'fakepve[crypto] @ git+<repository-url>'
-```
-
-This installs the `fakepve` command and the `fakepve` package. `python -m fakepve` does the same as the command.
+This installs the `fakepve` command and the `fakepve` package. `python -m fakepve` does the same as the command, and `fakepve --version` prints the version.
 
 ## Run it
 

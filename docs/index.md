@@ -9,8 +9,8 @@ It is for people writing Ansible modules, Terraform providers, proxmoxer scripts
 ## Thirty seconds
 
 ```console
-pip install '.[crypto]'
-python -m fakepve examples/guests.json --time-scale 0
+pip install 'fakepve[crypto]'
+fakepve examples/guests.json --time-scale 0
 fakepve listening on https://127.0.0.2:8006
 ```
 
