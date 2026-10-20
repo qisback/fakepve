@@ -54,7 +54,8 @@ async def test_clone_and_destroy_keep_pool_membership(pve, api):
 async def test_failed_create_does_not_join_the_pool(pve, api):
     await api.data('POST', '/pools', {'poolid': 'web'})
     pve.volume_exists = lambda volid: False
-    await failed(api, ('POST', '/nodes/pve1/lxc', {'vmid': 100, 'ostemplate': TEMPLATE, 'pool': 'web', 'rootfs': 'local-lvm:8'}),
+    body = {'vmid': 100, 'ostemplate': TEMPLATE, 'pool': 'web', 'rootfs': 'local-lvm:8'}
+    await failed(api, ('POST', '/nodes/pve1/lxc', body),
                  "unable to create CT 100 - volume '{0}' does not exist".format(TEMPLATE))
     assert pve.pools['web'] == set()
 
