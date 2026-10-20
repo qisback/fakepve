@@ -102,4 +102,4 @@ def test_validation_error(certfiles):
     with ThreadedFake(certfiles) as fake:
         status, body = Pve(fake).call('POST', '/nodes/pve1/lxc/50/status/start')
         assert status == 400
-        assert body['errors'] == {'vmid': 'value must have a minimum value of 100'}
+        assert body['errors'] == {'vmid': 'invalid format - value does not look like a valid VM ID\n'}

@@ -11,6 +11,8 @@ import json
 import pkgutil
 import re
 
+from . import formats
+
 try:
     from re import _parser as sre_parse
 except ImportError:  # Python < 3.11
@@ -129,59 +131,183 @@ def _pattern(pattern):
 
 def check_value(sch, val):
     """Check one value against a schema. Returns (coerced value, error or None)."""
+    errs = {}
+    out = _check(sch, val, '', errs)
+    return out, next(iter(errs.values()), None)
+
+
+def _check(sch, val, path, errs):
+    """Check val against sch as PVE's check_prop does, recording errors by path. Returns the coerced value."""
     kind = sch.get('type')
     if kind == 'array':
         items = val if isinstance(val, list) else [val]
-        out = []
-        for item in items:
-            item, err = check_value(sch.get('items') or {}, item)
-            if err:
-                return val, err
-            out.append(item)
-        if len(out) < sch.get('minItems', 0):
-            return val, 'array must have at least {0} items'.format(sch['minItems'])
-        return out, None
+        before = len(errs)
+        out = [_check(sch.get('items') or {}, item, '{0}[{1}]'.format(path, n), errs) for n, item in enumerate(items)]
+        if len(errs) == before and len(out) < sch.get('minItems', 0):
+            errs[path] = 'array must have at least {0} items'.format(sch['minItems'])
+        return out
     if kind == 'object':
-        return val, None if isinstance(val, dict) or val in ('', None) or isinstance(val, str) else \
-            _type_error('object', val)
+        if not (isinstance(val, dict) or val in ('', None) or isinstance(val, str)):
+            errs[path] = _type_error('object', val)
+        return val
     if isinstance(val, (list, dict)):
-        return val, _type_error(kind or 'string', val)
+        errs[path] = _type_error(kind or 'string', val)
+        return val
+    # A format sees the text as sent ('0100'), not the coerced number.
+    raw = str(val) if not isinstance(val, bool) else ('1' if val else '0')
     if kind == 'integer':
         if not _is_int(val):
-            return val, _type_error('integer', val)
+            errs[path] = _type_error('integer', val)
+            return val
         val = int(val)
     elif kind == 'number':
         if not _is_number(val):
-            return val, _type_error('number', val)
+            errs[path] = _type_error('number', val)
+            return val
         val = float(val)
         val = int(val) if val == int(val) else val
     elif kind == 'boolean':
         text = str(val).lower() if not isinstance(val, bool) else ('1' if val else '0')
         if text in TRUE:
-            return 1, None
+            return 1
         if text in FALSE:
-            return 0, None
-        return val, _type_error('boolean', val)
+            return 0
+        errs[path] = _type_error('boolean', val)
+        return val
     elif kind in (None, 'string', 'any'):
         val = str(val) if not isinstance(val, bool) else ('1' if val else '0')
-    if 'enum' in sch and val not in sch['enum'] and str(val) not in [str(e) for e in sch['enum']]:
-        return val, "value '{0}' does not have a value in the enumeration '{1}'".format(
-            val, ', '.join(str(e) for e in sch['enum']))
-    # The schema states some limits as strings ("16777216").
-    if 'minimum' in sch and isinstance(val, (int, float)) and val < float(sch['minimum']):
-        return val, 'value must have a minimum value of {0}'.format(sch['minimum'])
-    if 'maximum' in sch and isinstance(val, (int, float)) and val > float(sch['maximum']):
-        return val, 'value must have a maximum value of {0}'.format(sch['maximum'])
+    # The order is PVE's: format, pattern, lengths, range, enumeration.
+    if sch.get('format'):
+        why = _check_format(sch['format'], raw, path)
+        if why:
+            errs[path] = 'invalid format - ' + why
+            return val
+    if isinstance(val, str) and sch.get('pattern'):
+        rx = _pattern(sch['pattern'])
+        if rx is not None and (len(val) > MAX_PATTERN_VALUE or not rx.match(val)):
+            errs[path] = 'value does not match the regex pattern'
+            return val
     if isinstance(val, str):
-        if 'minLength' in sch and len(val) < sch['minLength']:
-            return val, 'value must be at least {0} characters long'.format(sch['minLength'])
         if 'maxLength' in sch and len(val) > sch['maxLength']:
-            return val, 'value may only be {0} characters long'.format(sch['maxLength'])
-        if sch.get('pattern'):
-            rx = _pattern(sch['pattern'])
-            if rx is not None and (len(val) > MAX_PATTERN_VALUE or not rx.match(val)):
-                return val, 'value does not match the regex pattern'
-    return val, None
+            errs[path] = 'value may only be {0} characters long'.format(sch['maxLength'])
+            return val
+        if 'minLength' in sch and len(val) < sch['minLength']:
+            errs[path] = 'value must be at least {0} characters long'.format(sch['minLength'])
+            return val
+    # The schema states some limits as strings ("16777216").
+    if 'maximum' in sch and isinstance(val, (int, float)) and val > float(sch['maximum']):
+        errs[path] = 'value must have a maximum value of {0}'.format(sch['maximum'])
+    elif 'minimum' in sch and isinstance(val, (int, float)) and val < float(sch['minimum']):
+        errs[path] = 'value must have a minimum value of {0}'.format(sch['minimum'])
+    elif 'enum' in sch and val not in sch['enum'] and str(val) not in [str(e) for e in sch['enum']]:
+        errs[path] = "value '{0}' does not have a value in the enumeration '{1}'".format(
+            val, ', '.join(str(e) for e in sch['enum']))
+    return val
+
+
+# ------------------------------------------------------------------- formats
+
+@functools.lru_cache(maxsize=None)
+def registered(name):
+    """The sub-schemas of a named property-string format, or None if the name is not one."""
+    if name in formats.REGISTERED:
+        return formats.REGISTERED[name]
+    if name == 'pve-qm-ide':  # the schema spells it out on ide[n]
+        props = load().paths['/nodes/{node}/qemu']['POST']['parameters']['properties']
+        return props['ide[n]']['format']
+    return None
+
+
+def _check_format(fmt, text, path):
+    """PVE's message (with its trailing newline) if text breaks the format, else None."""
+    sub = fmt if isinstance(fmt, dict) else registered(fmt) if isinstance(fmt, str) else None
+    if sub is not None:
+        return _property_string(sub, text, path)
+    if not isinstance(fmt, str):
+        return None
+    why = formats.check(fmt, text)
+    return why + '\n' if why else None
+
+
+def parse_boolean(text):
+    """PVE's boolean spellings: '1' or '0', or None if it is not one."""
+    low = text.lower()
+    return '1' if low in TRUE else '0' if low in FALSE else None
+
+
+def _property_string(sub, text, path):
+    """Check 'key=value,...' against its sub-schemas. Returns PVE's message or None."""
+    if len(text) > formats.MAX_FORMAT_VALUE:
+        return 'value may only be {0} characters long\n'.format(formats.MAX_FORMAT_VALUE)
+    res = {}
+    bare = False
+    for part in text.split(','):
+        if not part.strip():
+            continue
+        key, eq, val = part.partition('=')
+        if '\n' in part:
+            return 'properties must not contain newlines\n'
+        if eq and key and val:
+            if key in res:
+                return 'duplicate key in comma-separated list property: {0}\n'.format(key)
+            entry = sub.get(key) or {}
+            if entry.get('alias'):
+                if entry.get('keyAlias'):
+                    if entry['keyAlias'] in res:
+                        return "key alias '{0}' is already defined\n".format(entry['keyAlias'])
+                    res[entry['keyAlias']] = key
+                key = entry['alias']
+                entry = sub.get(key) or {}
+                if key in res:
+                    return "key '{0}' is already defined (via alias)\n".format(key)
+            if not entry:
+                return 'invalid key in comma-separated list property: {0}\n'.format(key)
+            res[key] = (parse_boolean(val) or val) if entry.get('type') == 'boolean' else val
+        elif not eq:
+            default = next((k for k, v in sub.items() if v.get('default_key')), None)
+            if bare:
+                return 'duplicate key in comma-separated list property: {0}\n'.format(default)
+            if default is None:
+                return 'value without key, but schema does not define a default key\n'
+            if res.get(default):
+                return 'duplicate key in comma-separated list property: {0}\n'.format(default)
+            bare = True
+            res[default] = (parse_boolean(part) or part) if sub[default].get('type') == 'boolean' else part
+        else:
+            return 'missing key in comma-separated list property\n'
+    errs = {}
+    for key, entry in sub.items():
+        if entry.get('alias'):
+            continue
+        where = '{0}.{1}'.format(path, key) if path else key
+        if key not in res:
+            if not entry.get('optional'):
+                errs[where] = 'property is missing and it is not optional'
+            continue
+        _check(entry, res[key], where, errs)
+        needs = entry.get('requires')
+        if needs and needs not in res:
+            errs['{0}.{1}'.format(path, needs) if path else needs] = "missing property required by '{0}'".format(where)
+    if errs:
+        return 'format error\n' + ''.join('{0}: {1}\n'.format(k, errs[k]) for k in sorted(errs))
+    return None
+
+
+# Highest index (exclusive) of PVE's numbered options such as net0 and scsi30.
+MAX_INDEX = {'net': 32, 'ipconfig': 32, 'ide': 4, 'sata': 6, 'scsi': 31, 'virtio': 16, 'unused': 256, 'numa': 8,
+             'hostpci': 16, 'usb': 14, 'virtiofs': 10, 'serial': 4, 'parallel': 3, 'mp': 256, 'dev': 256}
+
+
+def _prop(props, name):
+    """The schema of a request parameter; a numbered one (net0) is found under its pattern (net[n])."""
+    if name in props:
+        return props[name]
+    base = name.rstrip('0123456789')
+    index = name[len(base):]
+    if base and index and base + '[n]' in props and index == str(int(index)) and \
+            int(index) < MAX_INDEX.get(base, 10 ** 9):
+        return props[base + '[n]']
+    return None
 
 
 def validate(spec, values):
@@ -194,22 +320,21 @@ def validate(spec, values):
     errors = {}
     out = {}
     for name, val in values.items():
-        if name not in props:
+        sch = _prop(props, name)
+        if sch is None:
             if spec.get('additionalProperties', 1) in (0, '0', False):
                 errors[name] = 'property is not defined in schema and the schema does not allow additional properties'
             else:
                 out[name] = val
             continue
-        out[name], err = check_value(props[name], val)
-        if err:
-            errors[name] = err
+        out[name] = _check(sch, val, name, errors)
     for name, sch in props.items():
-        if name not in values and not sch.get('optional'):
+        if name not in values and not sch.get('optional') and '[n]' not in name:
             errors[name] = 'property is missing and it is not optional'
-        elif name in values and name not in errors and sch.get('requires'):
-            other = sch['requires']
-            if other not in values:
-                errors[other] = 'property is missing and it is not optional'
+    for name in values:
+        other = (_prop(props, name) or {}).get('requires')
+        if other and other not in values:
+            errors[other] = "missing property required by '{0}'".format(name)
     return out, errors
 
 
@@ -237,6 +362,12 @@ FORMATS = {
     'pve-ha-resource-or-vm-id': 'vm:100', 'pve-replication-job-id': '100-0',
     'pve-sdn-fabric-id': 'fabric1', 'pve-sdn-route-map-id': 'rm1', 'pve-sdn-prefix-list-id': 'pl1',
     'pve-sdn-subnet-id': 'zone1-10.0.0.0-24', 'pve-fw-comment-spec': 'fake',
+    'pve-bridge-id': 'vmbr0', 'disk-size': '32G', 'urlencoded': 'fake', 'pve-tokenid': 'root@pam!token1',
+    'pve-volume-id-or-qm-path': 'local:iso/fake.iso', 'pve-volume-id-or-absolute-path': '/var/lib/vz/fake.img',
+    'pve-storage-content': 'iso', 'ldap-simple-attr': 'uid', 'pve-hotplug-features': 'network',
+    'pve-startup-order': 'order=1', 'ipv4mask': '255.255.255.0', 'CIDRv4': '10.0.0.0/24', 'CIDRv6': 'fd00::/64',
+    'pve-ipv4-config': 'dhcp', 'pve-ipv6-config': 'dhcp', 'email': 'root@example.org', 'pve-tag': 'tag1',
+    'pve-vlan-id-or-range': '10',
 }
 
 
@@ -286,11 +417,12 @@ def _regex_sample(pattern):
 
 def _string(sch, name, ctx):
     fmt = sch.get('format')
-    if isinstance(fmt, dict):
+    named = registered(fmt) if isinstance(fmt, str) else None
+    if isinstance(fmt, dict) or named:
         # A property string: its required keys.
         parts = []
-        for key, sub in fmt.items():
-            if not sub.get('optional'):
+        for key, sub in (named or fmt).items():
+            if not sub.get('optional') and not sub.get('alias'):
                 parts.append('{0}={1}'.format(key, sample(sub, key, ctx)))
         return ','.join(parts)
     if isinstance(fmt, str):

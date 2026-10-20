@@ -164,10 +164,17 @@ async def test_integer_type_in_path(api):
 
 
 async def test_minimum_and_maximum(api):
-    assert await errors_of(api, 'POST', '/nodes/pve1/lxc/5/status/start') == {
-        'vmid': 'value must have a minimum value of 100'}
-    assert await errors_of(api, 'POST', '/nodes/pve1/lxc/1000000000/status/start') == {
-        'vmid': 'value must have a maximum value of 999999999'}
+    assert await errors_of(api, 'GET', '/nodes/pve1/tasks', {'limit': -1}) == {
+        'limit': 'value must have a minimum value of 0'}
+    assert await errors_of(api, 'GET', '/nodes/pve1/qemu/100/agent/file-read', {'file': '/x', 'count': 99999999}) == {
+        'count': 'value must have a maximum value of 16777216'}
+
+
+async def test_vmid_is_checked_by_its_format_first(api):
+    # PVE checks `format` before the range, so a vmid out of range reads as an invalid ID.
+    for vmid in ('5', '1000000000', '0100'):
+        assert await errors_of(api, 'POST', '/nodes/pve1/lxc/{0}/status/start'.format(vmid)) == {
+            'vmid': 'invalid format - value does not look like a valid VM ID\n'}
 
 
 async def test_max_length(api):

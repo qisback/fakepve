@@ -586,7 +586,8 @@ class FakePve(GenericApi, Model):
     # ------------------------------------------------------------------ VMs
 
     def _vm(self, request, priv=None):
-        vmid, err = pve_schema.check_value({'type': 'integer', 'minimum': 100}, request.match_info['vmid'])
+        vmid, err = pve_schema.check_value({'type': 'integer', 'format': 'pve-vmid', 'minimum': 100},
+                                           request.match_info['vmid'])
         if err:
             raise bad_request(vmid=err)
         vm = self.find(request.match_info['node'], vmid)
@@ -844,13 +845,16 @@ class FakePve(GenericApi, Model):
 
     async def _config_put(self, request):
         vm = self._vm(request)
-        await self._apply_config(vm, request[USER], await params(request))
+        p = await params(request)
+        self._verify(request, p)
+        await self._apply_config(vm, request[USER], p)
         return ok()
 
     async def _config_post(self, request):
         # The asynchronous form: a qmconfig task.
         vm = self._vm(request)
         p = await params(request)
+        self._verify(request, p)
         user = request[USER]
         self.need_quorum()
 
