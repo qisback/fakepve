@@ -4,10 +4,11 @@ import os
 import re
 from importlib import metadata
 
+from .lxc import FakeCt
 from .model import FakeVm, PveError, TaskError
 from .server import PORT, FakePve, next_loopback, settle
 
-__all__ = ['PORT', 'FakePve', 'FakeVm', 'PveError', 'TaskError', 'next_loopback', 'settle']
+__all__ = ['PORT', 'FakeCt', 'FakePve', 'FakeVm', 'PveError', 'TaskError', 'next_loopback', 'settle']
 
 
 def _version():

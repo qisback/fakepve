@@ -31,6 +31,7 @@ from . import agent as guest_agent
 from . import errors
 from . import schema as pve_schema
 from .generic import GenericApi
+from .lxc import FakeCt, LxcApi
 from .model import FakeVm, Model, PveError, TaskError
 
 PORT = 8006  # PVE's API port; clients often assume it
@@ -43,7 +44,7 @@ FORMATS = (API, EXTJS)
 USER = web.RequestKey('user', str) if hasattr(web, 'RequestKey') else 'user'
 GENERIC = web.RequestKey('generic', object) if hasattr(web, 'RequestKey') else 'generic'
 
-__all__ = ['PORT', 'FakePve', 'FakeVm', 'next_loopback', 'settle']
+__all__ = ['PORT', 'FakePve', 'FakeCt', 'FakeVm', 'next_loopback', 'settle']
 
 
 def next_loopback():
@@ -148,7 +149,7 @@ class BodyTimeout(Exception):
     """The client stopped sending its request body."""
 
 
-class FakePve(GenericApi, Model):
+class FakePve(GenericApi, LxcApi, Model):
     def __init__(self, user='root@pam', password='secret', host=None, port=PORT):
         super().__init__(user, password)
         self.host = host or next_loopback()
@@ -189,6 +190,7 @@ class FakePve(GenericApi, Model):
             r.add_get(node + '/storage/{storage}/content', self._storage_content)
             r.add_post(node + '/storage/{storage}/download-url', self._download_url)
             r.add_post(node + '/storage/{storage}/upload', self._upload)
+            self._lxc_routes(r, node)
             qemu = node + '/qemu/{vmid}'
             r.add_get(qemu + '/status/current', self._status_current)
             r.add_post(qemu + '/status/{action}', self._status_action)
@@ -456,6 +458,7 @@ class FakePve(GenericApi, Model):
             if vm.ha_managed:
                 item['hastate'] = vm.ha_state
             data.append(item)
+        data += self.ct_resources(request[USER], kind)
         if kind in (None, 'node'):
             for name, state in sorted(self.nodes.items()):
                 data.append({'id': 'node/' + name, 'type': 'node', 'node': name,

@@ -210,7 +210,7 @@ async def user_client(pve, api, user='ops@pve'):
 
 
 async def test_permission_denied_then_granted(pve, api):
-    pve.add_vm(100, 'vm1')
+    pve.add_ct(100, 'ct1')
     ops = await user_client(pve, api)
     pve.grant('ops@pve', '/vms/100', 'VM.Audit')
     status, body = await ops.call('POST', '/nodes/pve1/lxc/100/status/start')
@@ -267,7 +267,7 @@ async def test_unrouted_permissions_are_root_only(pve, api):
 # --------------------------------------------------------------------- tasks
 
 async def test_task_returning_endpoint_gives_a_real_upid(pve, api):
-    pve.add_vm(100, 'vm1')
+    pve.add_ct(100, 'ct1')
     upid = await api.data('POST', '/nodes/pve1/lxc/100/status/start')
     assert upid.startswith('UPID:pve1:')
     status = await api.data('GET', '/nodes/pve1/tasks/{0}/status'.format(upid))

@@ -182,6 +182,10 @@ class Model(object):
         """Add a node to the cluster."""
         self.nodes[name] = {'online': online}
 
+    def guest(self, vmid):
+        """The guest (VM or container) with this id, or None."""
+        return self.vm(vmid)
+
     def vm(self, vmid):
         """The VM with this id, or None."""
         for vm in self.vms:
@@ -221,7 +225,7 @@ class Model(object):
                 except asyncio.TimeoutError:
                     break
         if vm.lock_holder is not None:
-            raise TaskError(lock_timeout(vm.vmid))
+            raise TaskError(getattr(vm, 'lock_error', None) or lock_timeout(vm.vmid))
         vm.lock_holder = holder
 
     def release(self, vm, holder):
@@ -338,7 +342,7 @@ class Model(object):
 
     async def hold_config_lock(self, vmid, secs):
         """Another task holds the VM config lock for secs PVE seconds (or until release_config_lock)."""
-        vm = self.vm(vmid)
+        vm = self.guest(vmid)
         await self.acquire(vm, 'scenario', wait=0)
         if secs is not None:
             async def later():
@@ -348,11 +352,11 @@ class Model(object):
 
     def release_config_lock(self, vmid):
         """Release a lock taken by hold_config_lock()."""
-        self.release(self.vm(vmid), 'scenario')
+        self.release(self.guest(vmid), 'scenario')
 
     async def backup(self, vmid, secs=30, user='root@pam'):
         """A vzdump of the VM: lock 'backup' for secs PVE seconds."""
-        vm = self.vm(vmid)
+        vm = self.guest(vmid)
 
         async def body():
             vm.lock = 'backup'
@@ -368,7 +372,7 @@ class Model(object):
 
     async def migrate(self, vmid, target, secs=20, user='root@pam'):
         """Migrate the VM to target: lock 'migrate' for secs PVE seconds, then it lives there."""
-        vm = self.vm(vmid)
+        vm = self.guest(vmid)
         self.nodes.setdefault(target, {'online': True})
 
         async def body():
@@ -384,13 +388,13 @@ class Model(object):
 
     def snapshot_lock(self, vmid, lock='snapshot'):
         """Leave the VM locked, as an interrupted snapshot, clone or rollback does."""
-        vm = self.vm(vmid)
+        vm = self.guest(vmid)
         vm.lock = lock
         vm.config['lock'] = lock
 
     def unlock(self, vmid):
         """Clear the VM's lock."""
-        vm = self.vm(vmid)
+        vm = self.guest(vmid)
         vm.lock = None
         vm.config.pop('lock', None)
 
