@@ -49,7 +49,7 @@ def test_sanitiser_rejects_a_leaked_string_value(tool, vocab):
 
 
 def test_shape_keeps_types_and_drops_values_and_odd_keys(tool, vocab):
-    data = {'web01': {'name': 'web01', 'ip': '192.0.2.7', 'cpu': 0.5, 'template': 1, 'lock': None},
+    data = {'web01': {'name': 'web01', 'gandalf': '192.0.2.7', 'cpu': 0.5, 'template': 1, 'lock': None},
             'db02': {'name': 'db02', 'lock': 'backup'}}
     shaped = tool.shape(data, vocab.known)
     text = json.dumps(shaped)
@@ -70,11 +70,13 @@ def test_error_templates_carry_no_names_or_numbers(tool, vocab):
 
 
 def test_dump_refuses_a_document_with_an_error_value_or_a_credential(tool, vocab):
+    bad = 'node web01 does not exist'
     doc = {'format': 1, 'skipped': [], 'inventory': {'node': 1},
-           'endpoints': {'GET /version': {'status': 500, 'errors': [{'status': 500, 'error': 'node web01 does not exist'}]}}}
+           'endpoints': {'GET /version': {'status': 500, 'errors': [{'status': 500, 'error': bad}]}}}
     with pytest.raises(tool.Leak):
         tool.dump(doc, vocab)
-    doc['endpoints']['GET /version']['errors'][0]['error'] = 'node <x> does not exist'
+    doc['endpoints']['GET /version']['errors'][0]['error'] = tool.error_template(bad, vocab)
+    assert 'web01' not in doc['endpoints']['GET /version']['errors'][0]['error']
     assert tool.dump(doc, vocab)
     with pytest.raises(tool.Leak):
         tool.dump(doc, vocab, ['node'])
