@@ -150,11 +150,11 @@ async def test_the_token_never_reaches_output_files_or_errors(tool, tmp_path, ca
     junk.write_text('hunter2-not-a-token')
     seen = []
     async with tool.Fake({'node': 1, 'qemu': 1}) as fake:
-        for name, url, tok in (('good', fake.pve.url, good), ('wrong', fake.pve.url, wrong),
-                               ('down', 'https://127.0.0.1:1', good)):
+        for name, url, tok, cap in (('good', fake.pve.url, good, 1500), ('wrong', fake.pve.url, wrong, 1500),
+                                    ('down', 'https://127.0.0.1:1', good, 40)):
             out = tmp_path / (name + '.json')
             code, text = await run(tool, ['record', '--url', url, '--token-file', str(tok), '--insecure',
-                                          '--out', str(out), '--max-requests', '40', '--timeout', '5'])
+                                          '--out', str(out), '--max-requests', str(cap), '--timeout', '5'])
             assert code == 0
             seen += [text, out.read_text()]
         with pytest.raises(tool.ToolError) as err:
