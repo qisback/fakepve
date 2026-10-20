@@ -2,7 +2,7 @@
 
 fakepve is one Python process on aiohttp: no PVE, QEMU, Ceph or corosync, a few hundred milliseconds to start. That makes it cheap to run in every pipeline. This page covers the ways to run it, the choice of `time_scale`, certificates, and ready-made recipes for GitHub Actions, Forgejo and Gitea Actions, GitLab CI and plain pytest.
 
-Contents: [three ways to run it](#three-ways-to-run-it) | [pytest](#pytest) | [a background process](#a-background-process) | [time_scale](#choosing-time_scale) | [several fakes](#several-fakes) | [certificates](#certificates) | [a container](#a-container) | [pipelines](#pipelines) | [when a pipeline fails](#when-a-pipeline-fails)
+Contents: [three ways to run it](#three-ways-to-run-it) | [pytest](#pytest) (also [the plugin](pytest.md)) | [a background process](#a-background-process) | [time_scale](#choosing-time_scale) | [several fakes](#several-fakes) | [certificates](#certificates) | [a container](#a-container) | [pipelines](#pipelines) | [when a pipeline fails](#when-a-pipeline-fails)
 
 ## Three ways to run it
 
@@ -16,6 +16,8 @@ Contents: [three ways to run it](#three-ways-to-run-it) | [pytest](#pytest) | [a
 If your client is not written in Python but you want the scenarios, write a small server script (as [`examples/custom_server.py`](https://github.com/qisback/fakepve/blob/main/examples/custom_server.py) does), run it as a background process, and give it your tests' setup.
 
 ## pytest
+
+The quickest way is the plugin that comes with fakepve: `pip install 'fakepve[pytest]'` and ask for the `fakepve` fixture. It works for sync and async tests and for pytest-xdist; see [pytest](pytest.md). The rest of this section builds the fixtures by hand, which gives more control.
 
 ### Async client (aiohttp, httpx)
 
@@ -45,7 +47,7 @@ async def pve(cert):
 
 VMs and scenarios can be set up after the fake has started, so the test body does the configuring. Add `asyncio_mode = "auto"` under `[tool.pytest.ini_options]` in `pyproject.toml` to drop the `pytest.mark.asyncio` marks. A function-scoped fixture gives every test a clean cluster; the session-scoped certificate keeps key generation out of the loop.
 
-Within one process every fake gets its own loopback address, so any number of them can use port 8006. Separate processes do not know about each other: each `pytest-xdist` worker starts counting from `127.0.0.2` again, and so do two CI jobs on one machine. Give them different addresses or ports, for example `FakePve(host='127.0.0.{0}'.format(10 + worker_index))`.
+Within one process every fake gets its own loopback address, so any number of them can use port 8006. Separate processes do not know about each other: each `pytest-xdist` worker starts counting from `127.0.0.2` again, and so do two CI jobs on one machine. Give them different addresses or ports, for example `FakePve(host='127.0.0.{0}'.format(10 + worker_index))`, or let the system choose with `FakePve(host='127.0.0.1', port=0)` and read `pve.port` after `start()`, as the plugin does.
 
 ### Sync client (requests, proxmoxer, the proxmoxer-based Ansible modules)
 
@@ -176,7 +178,7 @@ From the command line pass `--host` for each. This works on Linux, where all of 
 
 ## Certificates
 
-Without `--cert` and `--key` (and with `cryptography` installed) the fake makes a self-signed ECDSA certificate: P-256, valid for 30 days, common name `fakepve`, and no subject alternative names. A client that verifies host names rejects it, so there are two choices.
+Without `--cert` and `--key` (and with `cryptography` installed) the fake makes a self-signed ECDSA certificate: P-256, valid for 30 days, common name `fakepve`, and subject alternative names for `localhost`, `127.0.0.1` and the address the fake listens on (the command line's `--host`, or `pve.host`). Its key usage is server authentication only and it is not a CA. A client that verifies host names accepts it once the certificate is its trust anchor, so there are three choices.
 
 **Skip verification.** The usual flag in a test. It is the right choice when the code under test already has an option for self-signed PVE (the people who run Proxmox at home have it set). Typical forms, to be checked against your client's documentation:
 
@@ -190,7 +192,9 @@ Without `--cert` and `--key` (and with `cryptography` installed) the fake makes 
 | Terraform providers | the provider's `insecure` option (`pm_tls_insecure` in telmate/proxmox) |
 | Ansible `community.general.proxmox*` | `validate_certs: false` |
 
-**Trust a certificate you made.** To test that your client verifies properly, make a certificate with the address as a subject alternative name, serve it with `--cert` and `--key`, and give the client the certificate as its CA:
+**Trust the generated certificate.** `fakepve.certs.make_cert(directory, hosts=(pve.host,))` writes the certificate and key, and the [pytest fixtures](pytest.md) give you the path as `fakepve_cafile`. Pass it to the client as its CA bundle (`requests.get(url, verify=cafile)`, `ssl.create_default_context(cafile=cafile)`, `curl --cacert`). The command line makes its own certificate at each start and removes the files, so with the command line use `--cert` and `--key` to keep one.
+
+**Trust a certificate you made.** To use your own, for example to name a host the generated one does not, make one with the address as a subject alternative name, serve it with `--cert` and `--key`, and give the client the certificate as its CA:
 
 ```console
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
@@ -204,7 +208,7 @@ If the key is in the same PEM file as the certificate, `--key` can be left out. 
 
 ## A container
 
-The repository's `Dockerfile` builds an image from `python:3.12-slim`, installs the package with the `crypto` extra, and runs `python -m fakepve`:
+Each release is published as `ghcr.io/qisback/fakepve:X.Y.Z` (and `:latest`); `docker run --rm -p 127.0.0.1:8006:8006 ghcr.io/qisback/fakepve:0.1.0` needs no build. Pin the version in a pipeline. The repository's `Dockerfile` builds an image from `python:3.12-slim`, installs the package with the `crypto` extra, and runs `python -m fakepve`:
 
 ```console
 docker build -t fakepve .
@@ -220,12 +224,12 @@ docker run --rm -p 127.0.0.1:8006:8006 fakepve guests.json --host 0.0.0.0 --time
 docker run --rm -p 127.0.0.1:8006:8006 -v "$PWD/mine.json:/opt/fakepve/mine.json:ro" fakepve mine.json --host 0.0.0.0
 ```
 
-Remember `--host 0.0.0.0` whenever you replace the arguments: inside a container the default `127.0.0.2` is unreachable from outside. The certificate is self-signed with no SAN, as above, so clients skip verification or you mount your own with `--cert` and `--key`.
+Remember `--host 0.0.0.0` whenever you replace the arguments: inside a container the default `127.0.0.2` is unreachable from outside. The certificate is self-signed and made at each start, and names `localhost` and `127.0.0.1` (not the container's own address), so a client that verifies has to trust a certificate you mount with `--cert` and `--key`, or skip verification.
 
 **As a CI service container.** The image is reachable by the service name (GitLab: the `alias`) or `localhost` on a published port (GitHub), at port 8006. Services cannot be given arguments on GitHub and Forgejo, so build an image that bakes in your guests file and `FROM` the fakepve one:
 
 ```dockerfile
-FROM fakepve:latest
+FROM ghcr.io/qisback/fakepve:0.1.0
 COPY ci/guests.json /opt/fakepve/guests.json
 ```
 
