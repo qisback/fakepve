@@ -168,7 +168,7 @@ Properties and methods: `ct.guest` is the id `/cluster/resources` shows (`lxc/10
 
 `pve.ct_secs` is a dict of PVE seconds each container task takes, all `0`: `create`, `clone`, `destroy`, `snapshot`, `delsnapshot`, `rollback`, `template`, `resize` and `migrate`. With a non-zero `time_scale` the task shows as running for that long, and the container's lock (`create`, `snapshot`, `disk` on a clone's source, `migrate`, `destroyed`) stays visible meanwhile.
 
-`pve.volume_exists(volid)` is the extension point for storage content: return `False` for an OS template that is not on its storage and a create task fails with `unable to create CT 100 - volume '...' does not exist`. The default returns `None`, which accepts every template.
+`pve.volume_exists(volid)` answers whether a volume (an OS template) is on its storage: `True` if it is, `False` if the storage lists other volumes of that kind (a template uploaded with `store_file(..., 'vztmpl')` or downloaded) but not this one, and `None` if the fake cannot tell (an unknown storage, or no template of the kind on it). A `False` makes the create task fail with `unable to create CT 100 - volume '...' does not exist`, as PVE's `activate_volume` does; replace the method to decide yourself.
 
 <!-- run -->
 ```python
@@ -546,7 +546,6 @@ Constructor: `FakePve(user='root@pam', password='secret', host=None, port=8006)`
 | `add_ct(*args, **kwargs)` | Add a FakeCt (arguments as FakeCt's) and its node; returns the container. |
 | `ct(vmid)` | The container with this id, or None. |
 | `guest(vmid)` | The VM or container with this id, or None. |
-| `volume_exists(volid)` | True or False if the fake knows whether a volume (an OS template) is in its storage, else None. |
 | `ct_resources(user, kind=None)` | The containers as /cluster/resources lists them. |
 | `resolve(request, prefix)` | The schema match of a request path, or None. |
 | `is_world(match, method)` | True if the method needs no login. |
@@ -555,6 +554,7 @@ Constructor: `FakePve(user='root@pam', password='secret', host=None, port=8006)`
 | `async synthesise(match, method, info, user, values)` | The answer for a generic method: a task UPID, or a value built from its `returns`. |
 | `firewall_config(scope, node=None, vmid=None)` | The stored firewall config of 'cluster', a node ('host') or a guest ('vm' or 'ct'). |
 | `storage_config(name)` | The storage as GET /storage/{storage} shows it. |
+| `volume_exists(volid)` | True or False if the fake knows whether a volume (an OS template) is on its storage, else None. |
 | `url` (property) | The address the fake listens on, https://host:port (the real port once started with port 0). |
 | `async start(certfile, keyfile)` | Listen on https://host:port with this certificate and key (PEM files). |
 | `async stop()` | Stop listening. |
