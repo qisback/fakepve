@@ -453,7 +453,7 @@ class Walker(object):
         templates = sorted(self.vocab.templates)
         skips = await asyncio.gather(*(self.one(t) for t in templates))
         doc = {'format': FORMAT, 'endpoints': {}, 'skipped': [], 'inventory': {}}
-        for template, why in zip(templates, skips):
+        for template, why in zip(templates, skips, strict=True):
             got = sorted(self.results.get(template, []), key=lambda pr: pr[0])
             if why and not got:
                 doc['skipped'].append({'endpoint': template, 'reason': why})
