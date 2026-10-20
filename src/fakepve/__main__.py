@@ -12,6 +12,7 @@ import shutil
 import sys
 import tempfile
 
+from . import __version__
 from .server import PORT, FakePve
 
 DEFAULT_PASSWORD = 'secret'
@@ -71,6 +72,7 @@ async def serve(args):
 
 def main():
     parser = argparse.ArgumentParser(prog='fakepve', description=__doc__.splitlines()[0])
+    parser.add_argument('--version', action='version', version='fakepve ' + __version__)
     parser.add_argument('guests', help='JSON file: {"guests": [{"vmid", "name", "status", "config", ...}]}')
     parser.add_argument('--host', default='127.0.0.2')
     parser.add_argument('--port', type=int, default=PORT)

@@ -4,7 +4,7 @@
 
 ```console
 fakepve GUESTS_FILE [--host HOST] [--port PORT] [--user USER] [--password PASSWORD]
-                    [--time-scale TIME_SCALE] [--latency LATENCY] [--cert CERT] [--key KEY]
+                    [--time-scale TIME_SCALE] [--latency LATENCY] [--cert CERT] [--key KEY] [--version]
 ```
 
 ![fakepve --help](img/cli-help.svg)
@@ -22,6 +22,7 @@ fakepve GUESTS_FILE [--host HOST] [--port PORT] [--user USER] [--password PASSWO
 | `--latency SECONDS` | `0` | PVE seconds added to every response (`pve.slow_network(latency)`). Scaled by `--time-scale`, so it does nothing at `0`. |
 | `--cert FILE` | none | PEM certificate to serve. Without `--cert` a self-signed one is made, which needs `cryptography`. |
 | `--key FILE` | none | PEM key for `--cert`. May be omitted if the key is in the same file. |
+| `--version` | | Print the version and exit. |
 | `-h`, `--help` | | Show the usage. |
 
 Environment variables: `PVE_USER` and `PVE_PASS` set the defaults of `--user` and `--password`; an option on the command line wins. There are no others.
