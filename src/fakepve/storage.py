@@ -245,6 +245,8 @@ class StorageApi(StatefulRoutes):
         for key in deletes:
             store.pop(key, None)
         store.update(params)
+        if spec and 'content' not in store:
+            store['content'] = spec['default']
         return {'storage': sid, 'type': store.get('type', 'dir')}
 
     async def _sc_delete(self, v, user):
