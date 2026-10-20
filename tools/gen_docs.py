@@ -21,7 +21,7 @@ from aiohttp.test_utils import make_mocked_request  # noqa: E402
 from fakepve import certs, errors, schema  # noqa: E402
 from fakepve import FakePve, FakeVm  # noqa: E402
 from fakepve.generic import NOT_TASKS  # noqa: E402
-from fakepve.server import AGENT_COMMANDS, API  # noqa: E402
+from fakepve.server import API  # noqa: E402
 
 ENDPOINTS = os.path.join(ROOT, 'docs', 'reference', 'endpoints.md')
 PYTHON_API = os.path.join(ROOT, 'docs', 'python-api.md')
@@ -41,8 +41,6 @@ def hand_written(pve, app, path, method):
     if '/qemu/' in path and segs[-2] == 'status' and segs[-1] != 'current':
         if not hasattr(pve, '_do_' + segs[-1]):
             return 'unmodelled'
-    if '/qemu/' in path and segs[-2] == 'agent' and segs[-1] not in AGENT_COMMANDS:
-        return 'unmodelled'
     return 'stateful'
 
 
@@ -129,7 +127,7 @@ def endpoints_md():
         '- **generic (from the schema)**: {0} methods check parameters and permissions as the schema states them and '
         'answer with a value of the right shape. A write succeeds and changes nothing.'.format(counts['generic']),
         '- **routed to a hand-written handler that answers 501**: {0} methods whose route is claimed by a stateful '
-        'family (VM `status/{{action}}`, guest `agent/{{command}}`) but whose action or command is not modelled.'
+        'family (VM `status/{{action}}`) but whose action is not modelled.'
         .format(counts['unmodelled']),
         '',
         'For each method: **Access** is the permission rule from the schema (evaluated against `pve.grant`; root is '

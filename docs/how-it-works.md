@@ -48,11 +48,11 @@ It stays one Python process on aiohttp. No PVE, QEMU, Ceph or corosync is run, a
 - `access/ticket`, `access/password`, `version`;
 - `nodes`, `cluster/resources`, `cluster/status`, `cluster/ceph/status`;
 - per node: `tasks`, `tasks/{upid}/status`, `tasks/{upid}/log`, `storage`, `storage/{s}/content`, `storage/{s}/download-url`, `storage/{s}/upload`;
-- per VM: `status/current`, `status/{start,stop,shutdown,reboot,reset,suspend,resume}`, `config` (GET, PUT, and POST as a task), `pending`, `termproxy`, `vncproxy`, `vncwebsocket`, `agent/{get-osinfo,network-get-interfaces,ping}`, `monitor`.
+- per VM: `status/current`, `status/{start,stop,shutdown,reboot,reset,suspend,resume}`, `config` (GET, PUT, and POST as a task), `pending`, `termproxy`, `vncproxy`, `vncwebsocket`, `agent/{command}` (every command in the schema), `monitor`.
 
 They follow PVE's rules: config writes on a running VM go to `pending` unless the key is hot-pluggable; a CD-ROM media change applies at once; `reboot` and a cold start apply pending changes and `reset` does not; `PUT config` checks the `digest`, validates the boot order against the VM's devices, and checks the privilege each key needs (`hookscript` is root only); starting a running VM, or acting on a stopped one, gets PVE's messages; templates cannot be started.
 
-Two route families are claimed as a whole, so they hide generic answers: `status/{action}` (an action without a `_do_` handler answers 501) and `agent/{command}` (a command outside `AGENT_COMMANDS` answers 501). The [endpoint reference](reference/endpoints.md) marks the methods affected as "routed to a hand-written handler that answers 501". The LXC endpoints are all generic: they validate and answer, but a container is not modelled.
+One route family is claimed as a whole, so it hides generic answers: `status/{action}` (an action without a `_do_` handler answers 501). `agent/{command}` is claimed too, but every command of the schema is answered there (see `agent.py`). The [endpoint reference](reference/endpoints.md) marks the methods affected as "routed to a hand-written handler that answers 501". The LXC endpoints are all generic: they validate and answer, but a container is not modelled.
 
 ## The generic handler
 
@@ -106,7 +106,7 @@ Stated plainly, so nobody has to find them by surprise:
 
 - **Most of the API keeps no state.** Outside the hand-written routes a write succeeds and changes nothing, and a read returns a made-up value of the right shape. Create a VM through `POST /nodes/pve1/qemu` and it does not exist afterwards; add VMs with `pve.add_vm` or the guests file.
 - **Containers are not modelled.** The `lxc` endpoints validate and answer from the schema, but there are no containers to start, stop or list.
-- **Guest agent commands:** only `ping`, `get-osinfo` and `network-get-interfaces` are modelled. The other 22 `agent/*` methods answer 501.
+- **Guest agent commands are shapes, not behaviour.** `ping`, `get-osinfo` and `network-get-interfaces` read `vm.agent`, and `fsfreeze-*` keep a frozen flag. The rest answer plausible values, and `exec`, `exec-status`, `file-read` and `file-write` only record the request: nothing runs and no file is touched. `shutdown` and `suspend-*` do not change the VM.
 - **Two-factor logins stop at `NeedTFA`.** There is no second step to complete.
 - **`/api2/extjs` is not served**, only `/api2/json`.
 - **Property strings are not validated** (`format` schemas such as `virtio=...,bridge=...`), nor are regular expressions that only Perl understands.

@@ -59,10 +59,16 @@ class FakeVm(object):
         self.stats = {}
         self.started_at = time.time() if status == 'running' else None
         self.nmis = 0
-        # Guest agent answers ({'os': ..., 'interfaces': ...}); None: no agent running.
+        # Guest agent answers by command ('os', 'interfaces', 'get-host-name', 'files', 'exec', ...); None: no agent.
         self.agent = None
         # The agent is running but does not answer.
         self.agent_hangs = False
+        # (command, parameters) of every agent request answered, oldest first; nothing is executed.
+        self.agent_requests = []
+        # Filesystems frozen by the agent, and the exec pids handed out with their commands.
+        self.agent_frozen = False
+        self.agent_pid = 1000
+        self.agent_execs = {}
         # A guest OS without ACPI handling ignores shutdown and reboot.
         self.acpi = True
         # PVE seconds the guest takes to power off after ACPI; the start and

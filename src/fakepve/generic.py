@@ -35,8 +35,8 @@ class GenericApi(object):
         info = match and match.methods.get(method)
         return bool(info) and (info.get('permissions') or {}).get('user') == 'world'
 
-    async def answer(self, request, match, params, user):
-        """The data for a request the hand-written routes did not take."""
+    async def answer(self, request, match, params, user, call=None):
+        """The data for a request: checked against the schema, then call(match, values) or a value from `returns`."""
         if match is None:
             raise web.HTTPNotFound()
         method = request.method
@@ -55,6 +55,8 @@ class GenericApi(object):
             raise PveError(500, "hostname lookup '{0}' failed - failed to get address info for: {0}: "
                                 "Name or service not known".format(match.params['node']))
         self.check_permissions(user, info.get('permissions'), values)
+        if call is not None:
+            return await call(match, values)
         return await self.synthesise(match, method, info, user, values)
 
     # ---------------------------------------------------------- permissions

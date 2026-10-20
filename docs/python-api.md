@@ -96,8 +96,11 @@ fakecluster 9.0.10 9.0
 | `vm.stats` | Extra fields merged into `status/current`, overriding the defaults: `vm.stats['cpu'] = 0.95`. |
 | `vm.started_at` | When it started (`time.time()`), from which uptime is computed; `None` when stopped. |
 | `vm.nmis` | How many NMIs the `monitor` endpoint has sent it. |
-| `vm.agent` | What the guest agent answers, a dict with `os` and `interfaces`; `None` means the agent is not running. |
+| `vm.agent` | What the guest agent answers, a dict; `None` means the agent is not running. `os` and `interfaces` answer `get-osinfo` and `network-get-interfaces`; any other command's name (`get-host-name`, `get-timezone`, ...) replaces that command's default result. `files` maps a path to what `file-read` returns, and `exec` maps a command line (`'echo hi'`) to the fields `exec-status` answers with. |
 | `vm.agent_hangs` | `True`: the agent is running but never answers (the call fails with PVE's timeout message). |
+| `vm.agent_requests` | `(command, parameters)` for every agent request answered, oldest first. `exec` and the file commands only land here: nothing is run and no file is read or written. A `password` is recorded as `***`. |
+| `vm.agent_frozen` | `True` between an agent `fsfreeze-freeze` and `fsfreeze-thaw`; `fsfreeze-status` reads it. |
+| `vm.agent_pid`, `vm.agent_execs` | The last pid `agent/exec` handed out, and each pid's command line, which `exec-status` looks up. |
 | `vm.acpi` | `False`: the guest ignores ACPI shutdown and reboot, so they run into the timeout. |
 | `vm.shutdown_secs` | How long the guest takes to power off after a shutdown. A shutdown task fails with `VM quit/powerdown failed - got timeout` if this exceeds its `timeout` parameter (else `pve.shutdown_default_timeout`). |
 | `vm.start_secs`, `vm.stop_secs` | How long the start and stop tasks run. |
@@ -481,7 +484,7 @@ Constructor: `FakePve(user='root@pam', password='secret', host=None, port=8006)`
 | `file_size(path)` | Size of a local file in bytes. |
 | `resolve(request, prefix)` | The schema match of a request path, or None. |
 | `is_world(match, method)` | True if the method needs no login. |
-| `async answer(request, match, params, user)` | The data for a request the hand-written routes did not take. |
+| `async answer(request, match, params, user, call=None)` | The data for a request: checked against the schema, then call(match, values) or a value from `returns`. |
 | `check_permissions(user, perms, values)` | Raise a 403 PveError unless user satisfies the schema's permission rule. |
 | `async synthesise(match, method, info, user, values)` | The answer for a generic method: a task UPID, or a value built from its `returns`. |
 | `url` (property) | The address the fake listens on, https://host:port (the real port once started with port 0). |
@@ -562,6 +565,10 @@ Attributes after construction:
 | `nmis` | `0` |
 | `agent` | `None` |
 | `agent_hangs` | `False` |
+| `agent_requests` | `[]` |
+| `agent_frozen` | `False` |
+| `agent_pid` | `1000` |
+| `agent_execs` | `{}` |
 | `acpi` | `True` |
 | `shutdown_secs` | `0` |
 | `start_secs` | `0` |

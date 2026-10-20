@@ -167,9 +167,10 @@ def check_value(sch, val):
     if 'enum' in sch and val not in sch['enum'] and str(val) not in [str(e) for e in sch['enum']]:
         return val, "value '{0}' does not have a value in the enumeration '{1}'".format(
             val, ', '.join(str(e) for e in sch['enum']))
-    if 'minimum' in sch and isinstance(val, (int, float)) and val < sch['minimum']:
+    # The schema states some limits as strings ("16777216").
+    if 'minimum' in sch and isinstance(val, (int, float)) and val < float(sch['minimum']):
         return val, 'value must have a minimum value of {0}'.format(sch['minimum'])
-    if 'maximum' in sch and isinstance(val, (int, float)) and val > sch['maximum']:
+    if 'maximum' in sch and isinstance(val, (int, float)) and val > float(sch['maximum']):
         return val, 'value must have a maximum value of {0}'.format(sch['maximum'])
     if isinstance(val, str):
         if 'minLength' in sch and len(val) < sch['minLength']:

@@ -26,6 +26,7 @@ import urllib.parse
 import aiohttp
 from aiohttp import web
 
+from . import agent as guest_agent
 from . import errors
 from . import schema as pve_schema
 from .generic import GenericApi
@@ -34,8 +35,6 @@ from .model import FakeVm, Model, PveError, TaskError
 PORT = 8006  # PVE's API port; clients often assume it
 _hostseq = itertools.count(2)
 API = '/api2/json'
-# Guest agent commands answered, and the key of vm.agent each reads.
-AGENT_COMMANDS = {'get-osinfo': 'os', 'network-get-interfaces': 'interfaces', 'ping': None}
 # Where the authenticated user is kept on the request.
 USER = web.RequestKey('user', str) if hasattr(web, 'RequestKey') else 'user'
 GENERIC = web.RequestKey('generic', object) if hasattr(web, 'RequestKey') else 'generic'
@@ -65,9 +64,20 @@ def bad_request(**fields):
     return PveError(400, 'Parameter verification failed.', fields)
 
 
+def collect(pairs):
+    """Form and query pairs as a dict; a repeated name becomes a list, as PVE reads array parameters."""
+    out = {}
+    for key, val in pairs:
+        if key in out:
+            out[key] = out[key] + [val] if isinstance(out[key], list) else [out[key], val]
+        else:
+            out[key] = val
+    return out
+
+
 async def params(request):
     """Request parameters as PVE takes them: query string, form or JSON body."""
-    out = dict(request.query)
+    out = collect(request.query.items())
     body = await request.read()
     if not body or request.content_type == 'multipart/form-data':
         return out
@@ -78,7 +88,7 @@ async def params(request):
                 raise ValueError('not an object')
             out.update(data)
         else:
-            out.update(urllib.parse.parse_qsl(body.decode()))
+            out.update(collect(urllib.parse.parse_qsl(body.decode())))
     except RecursionError:
         raise bad_request(body='JSON nested too deeply') from None
     except UnicodeDecodeError:
@@ -854,18 +864,22 @@ class FakePve(GenericApi, Model):
     # --------------------------------------------------------- guest agent
 
     async def _agent(self, request):
-        vm = self._vm(request, 'VM.GuestAgent.Audit')
-        command = request.match_info['command']
+        match = self.resolve(request, API)
+        if match is None or request.method not in match.methods:
+            raise PveError(501, "Method '{0} {1}' not implemented".format(request.method, request.path))
+        return ok(await self.answer(request, match, await params(request), request[USER], self._agent_call))
+
+    async def _agent_call(self, match, values):
+        """An agent command, once the schema's checks passed: the scenarios first, then the answer."""
+        vm = self.find(values['node'], values['vmid'])
+        command = match.template.rsplit('/', 1)[1]
         if vm.status != 'running' or vm.agent is None:
             raise PveError(500, 'QEMU guest agent is not running')
         if vm.agent_hangs:
             await self.pause(10)
             raise PveError(500, "VM {0} qmp command 'guest-ping' failed - got timeout".format(vm.vmid))
-        if command not in AGENT_COMMANDS:
-            raise PveError(501, "Method 'GET /nodes/{0}/qemu/{1}/agent/{2}' not implemented".format(
-                vm.node, vm.vmid, command))
-        key = AGENT_COMMANDS[command]
-        return ok({'result': vm.agent.get(key) if key else {}})
+        guest_agent.record(vm, command, values)
+        return guest_agent.result(vm, command, values)
 
     async def _monitor(self, request):
         vm = self._vm(request, 'VM.Monitor')

@@ -674,7 +674,7 @@ A name the method does not have is a `ValueError` listing the ones it does. The 
 
 ## Guest agent
 
-A VM answers agent calls only when it is running and `vm.agent` is set to a dict of answers. Without it, or when stopped, PVE's message comes back; `vm.agent_hangs = True` makes the agent time out.
+A VM answers agent calls only when it is running and `vm.agent` is set to a dict of answers. Without it, or when stopped, PVE's message comes back; `vm.agent_hangs = True` makes the agent time out. This holds for every `agent/*` command in the schema.
 
 <!-- run -->
 ```python
@@ -697,7 +697,23 @@ async with fake() as (pve, api):
 500 {"data": null, "message": "VM 100 qmp command 'guest-ping' failed - got timeout\n"}
 ```
 
-Only `ping`, `get-osinfo` and `network-get-interfaces` are modelled; the other agent commands in the schema answer 501.
+Every other command answers a plausible result of the shape PVE returns (`vm.agent['get-timezone'] = {...}` replaces one). `agent/exec` and `agent/file-write` run and write nothing: the request is appended to `vm.agent_requests`, which a test can read back.
+
+<!-- run -->
+```python
+async with fake() as (pve, api):
+    vm = pve.add_vm(100, 'web1', status='running')
+    vm.agent = {'exec': {'uptime -p': {'out-data': 'up 2 hours'}}}
+    _, started = await api.call('POST', '/nodes/pve1/qemu/100/agent/exec', {'command': ['uptime', '-p']})
+    show(await api.call('GET', '/nodes/pve1/qemu/100/agent/exec-status', {'pid': started['data']['pid']}))
+    print(vm.agent_requests[0])
+```
+
+<!-- output -->
+```text
+200 {"data": {"exited": true, "exitcode": 0, "out-data": "", "err-data": ""}}
+('exec', {'command': ['-p']})
+```
 
 ## Pending changes
 
