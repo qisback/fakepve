@@ -60,7 +60,7 @@ async def serve(args):
         if not certfile:
             from .certs import make_cert
             tmp = tempfile.mkdtemp(prefix='fakepve-')
-            certfile, keyfile, _ = make_cert(tmp)
+            certfile, keyfile, _ = make_cert(tmp, hosts=(args.host,))
         await pve.start(certfile, keyfile)
     finally:
         # The key is loaded; nothing needs the files any more.

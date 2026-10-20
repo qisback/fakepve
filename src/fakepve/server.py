@@ -149,6 +149,11 @@ class FakePve(GenericApi, Model):
         self.body_timeout = 30.0
         self._random = random.Random()
 
+    @property
+    def url(self):
+        """The address the fake listens on, https://host:port (the real port once started with port 0)."""
+        return 'https://{0}:{1}'.format(self.host, self.port)
+
     # ------------------------------------------------------------- lifecycle
 
     def _build_app(self):
@@ -196,6 +201,9 @@ class FakePve(GenericApi, Model):
         self.runner = web.AppRunner(self._build_app())
         await self.runner.setup()
         await web.TCPSite(self.runner, self.host, self.port, ssl_context=ctx).start()
+        if not self.port:
+            # Port 0 asked the system for a free one.
+            self.port = self.runner.addresses[0][1]
 
     async def stop(self):
         """Stop listening."""

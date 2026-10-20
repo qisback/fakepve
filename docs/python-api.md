@@ -11,7 +11,7 @@ All durations are PVE seconds. The examples on this page run as they stand.
 `FakePve(user='root@pam', password='secret', host=None, port=8006)` is one fake cluster behind one listening socket.
 
 - `host` is the address it listens on. By default each instance takes the next loopback address (`127.0.0.2`, `127.0.0.3`, ...; see `next_loopback()`), so any number of fakes can all use port 8006. Pass your own to choose.
-- `port` is the TCP port, 8006 (`PORT`) by default.
+- `port` is the TCP port, 8006 (`PORT`) by default. Port 0 asks the system for a free one; `pve.port` holds the real port once the fake has started, and `pve.url` is `https://host:port`.
 - `user` and `password` are the login; this user can do everything. `check_password(user, password)` is what the login uses.
 
 `await pve.start(certfile, keyfile)` listens, with the PEM certificate and key you give it (`fakepve.certs.make_cert` makes a self-signed pair). `await pve.stop()` closes everything. `pve.runner` is the aiohttp runner while it is running, and `None` before and after. `settle()` lets spawned tasks run; call it before `stop()` in a test so background tasks do not outlive the loop.
@@ -484,6 +484,7 @@ Constructor: `FakePve(user='root@pam', password='secret', host=None, port=8006)`
 | `async answer(request, match, params, user)` | The data for a request the hand-written routes did not take. |
 | `check_permissions(user, perms, values)` | Raise a 403 PveError unless user satisfies the schema's permission rule. |
 | `async synthesise(match, method, info, user, values)` | The answer for a generic method: a task UPID, or a value built from its `returns`. |
+| `url` (property) | The address the fake listens on, https://host:port (the real port once started with port 0). |
 | `async start(certfile, keyfile)` | Listen on https://host:port with this certificate and key (PEM files). |
 | `async stop()` | Stop listening. |
 
@@ -588,7 +589,7 @@ Attributes after construction:
 
 | Function | What it does |
 |---|---|
-| `make_cert(directory, name='fakepve')` | Write <name>.crt and <name>.key into directory; returns (certfile, keyfile, der). |
+| `make_cert(directory, name='fakepve', hosts=())` | Write <name>.crt and <name>.key into directory; returns (certfile, keyfile, der). |
 
 ### fakepve.errors
 
