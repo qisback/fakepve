@@ -577,10 +577,12 @@ def seed(pve, inv):
         pve.add_node('pve{0}'.format(n))
     nodes = sorted(pve.nodes)
     for n in range(inv.get('qemu', 0)):
-        pve.add_vm(100 + n, 'vm{0}'.format(n), node=nodes[n % len(nodes)], status='running' if n % 2 == 0 else 'stopped',
+        pve.add_vm(100 + n, 'vm{0}'.format(n), node=nodes[n % len(nodes)],
+                   status='running' if n % 2 == 0 else 'stopped',
                    config={'memory': 512, 'cores': 1})
     for n in range(inv.get('lxc', 0)):
-        pve.add_ct(200 + n, 'ct{0}'.format(n), node=nodes[n % len(nodes)], status='running' if n % 2 == 0 else 'stopped')
+        pve.add_ct(200 + n, 'ct{0}'.format(n), node=nodes[n % len(nodes)],
+                   status='running' if n % 2 == 0 else 'stopped')
     want = inv.get('storage')
     if want is not None:
         for name in sorted(pve.storages)[want:]:
@@ -650,7 +652,8 @@ async def self_test(write=print):
 # ------------------------------------------------------------------------ CLI
 
 def parser():
-    ap = argparse.ArgumentParser(allow_abbrev=False, description='Compare fakepve with a real PVE, read-only, keeping only shapes.')
+    ap = argparse.ArgumentParser(allow_abbrev=False,
+                                 description='Compare fakepve with a real PVE, read-only, keeping only shapes.')
     ap.add_argument('--self-test', action='store_true', help='record an in-process fakepve and diff it against itself')
     sub = ap.add_subparsers(dest='mode')
     rec = sub.add_parser('record', allow_abbrev=False, help='walk the GET methods of a PVE and write a shape file')
@@ -666,7 +669,8 @@ def parser():
     rec.add_argument('--timeout', type=float, default=20.0, help='seconds per request')
     rec.add_argument('--list-items', type=int, default=5, help='list items merged into one shape')
     rec.add_argument('--include-rrd', action='store_true')
-    dif = sub.add_parser('diff', allow_abbrev=False, help='compare a shape file with a seeded fakepve, or with another shape file')
+    dif = sub.add_parser('diff', allow_abbrev=False,
+                         help='compare a shape file with a seeded fakepve, or with another shape file')
     dif.add_argument('shape')
     dif.add_argument('--against', help='a second shape file instead of an in-process fakepve')
     dif.add_argument('--strict', action='store_true', help='exit 1 when there are differences')
