@@ -4,6 +4,23 @@ All notable changes to fakepve are recorded here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+### Added
+
+- Every guest agent command in the schema now answers (25 `agent/*` methods; 22 used to answer 501). The agent scenarios (`vm.agent` absent, `vm.agent_hangs`) apply to all of them, and `exec` and the file commands record the request on `vm.agent_requests` without running or touching anything.
+- Parameters with a `format` are validated as PVE does, with its wording: property strings (`net0`, `scsi1`, `ipconfig0`, `boot`, `rng0`, ... including unknown keys, missing required keys and `requires`) and the common named formats (`pve-vmid`, `pve-configid`, `pve-storage-id`, `pve-node`, `mac-addr`, `ipv4`, `ipv6`, `CIDR`, `pve-bridge-id`, `email`, `dns-name`, and more). The rest are listed in the docs as accepted without checking. `PUT` and `POST` on a VM's `config` are validated too.
+- `/api2/extjs` is served: the same handlers and logins as `/api2/json`, answered in PVE's ExtJS envelope (HTTP 200, `data`, `success`, and for an error the `status`, `message` and `errors` in the body).
+- A weekly check (and `tools/check_schema.py`) compares the hash of the online PVE `apidoc.js` with the vendored schema and opens an issue when PVE's API has changed.
+
+### Changed
+
+- A vmid out of range now fails with `invalid format - value does not look like a valid VM ID`, as on PVE, instead of a minimum or maximum message.
+- Errors in array parameters are reported under `name[index]`, and a missing `requires` partner reads `missing property required by 'name'`.
+
+### Fixed
+
+- Repeated form or query parameters (`command=a&command=b`) are read as an array, as PVE does, instead of keeping the last value.
+- A schema limit written as a string (`maximum: "16777216"`) no longer breaks validation.
+
 ## [0.1.0] - 2026-10-20
 
 First public release.
