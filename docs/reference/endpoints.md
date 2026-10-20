@@ -4,8 +4,8 @@
 
 Every path and method of the PVE API schema that fakepve answers, under `/api2/json`: 680 methods on 449 paths.
 
-- **stateful (hand-written)**: 80 methods keep state and follow PVE's rules (see [How it works](../how-it-works.md)).
-- **generic (from the schema)**: 600 methods check parameters and permissions as the schema states them and answer with a value of the right shape. A write succeeds and changes nothing.
+- **stateful (hand-written)**: 151 methods keep state and follow PVE's rules (see [How it works](../how-it-works.md)).
+- **generic (from the schema)**: 529 methods check parameters and permissions as the schema states them and answer with a value of the right shape. A write succeeds and changes nothing.
 - **routed to a hand-written handler that answers 501**: 0 methods whose route is claimed by a stateful family (VM `status/{action}`) but whose action is not modelled.
 
 For each method: **Access** is the permission rule from the schema (evaluated against `pve.grant`; root is always allowed), **Required** the parameters that must be sent (path parameters included), and **Errors** the names that `pve.fail(..., error=name)` accepts, from the [error catalogue](../errors.md). Errors marked "in the task" are raised in a PVE worker: the request succeeds and the task ends with the error.
@@ -576,155 +576,155 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/cluster/firewall/aliases`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /: Sys.Audit
   - Required: none
   - Errors: `implement_subclass`
-- **POST**: generic (from the schema)
+- **POST**: stateful (hand-written)
   - Access: /: Sys.Modify
   - Required: `cidr`, `name` (+1 optional)
   - Errors: `param_name_alias_already_exists`, `implement_subclass`
 
 ### `/cluster/firewall/aliases/{name}`
 
-- **DELETE**: generic (from the schema)
+- **DELETE**: stateful (hand-written)
   - Access: /: Sys.Modify
   - Required: `name` (+1 optional)
   - Errors: `implement_subclass`
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /: Sys.Audit
   - Required: `name`
   - Errors: `param_name_no_such_alias`, `implement_subclass`
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /: Sys.Modify
   - Required: `cidr`, `name` (+3 optional)
   - Errors: `param_name_no_such_alias`, `param_name_alias_already_exists`, `implement_subclass`
 
 ### `/cluster/firewall/groups`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: any logged-in user
   - Required: none
-- **POST**: generic (from the schema)
+- **POST**: stateful (hand-written)
   - Access: /: Sys.Modify
   - Required: `group` (+3 optional)
   - Errors: `param_group_security_group_does`, `param_group_security_group_does_2`, `param_group_security_group_already`, `can_t_lock_firewall_config`
 
 ### `/cluster/firewall/groups/{group}`
 
-- **DELETE**: generic (from the schema)
+- **DELETE**: stateful (hand-written)
   - Access: /: Sys.Modify
   - Required: `group`
   - Errors: `security_group_not_empty`, `no_such_security_group`
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /: Sys.Audit
   - Required: `group`
   - Errors: `implement_subclass`
-- **POST**: generic (from the schema)
+- **POST**: stateful (hand-written)
   - Access: /: Sys.Modify
   - Required: `action`, `group`, `type` (+13 optional)
   - Errors: `implement_subclass`, `unknown_rule_env`, `parameter_verification_failed`, `detected_mixed_ipv_ipv_addresses`
 
 ### `/cluster/firewall/groups/{group}/{pos}`
 
-- **DELETE**: generic (from the schema)
+- **DELETE**: stateful (hand-written)
   - Access: /: Sys.Modify
   - Required: `group` (+2 optional)
   - Errors: `no_rule_position`, `implement_subclass`
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /: Sys.Audit
   - Required: `group` (+1 optional)
   - Errors: `no_rule_position`, `implement_subclass`
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /: Sys.Modify
   - Required: `group` (+17 optional)
   - Errors: `no_rule_position`, `implement_subclass`, `param_delete_no_such_property`, `param_delete_unable_delete_required`, `unknown_rule_env`, `parameter_verification_failed`, `detected_mixed_ipv_ipv_addresses`
 
 ### `/cluster/firewall/ipset`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /: Sys.Audit
   - Required: none
   - Errors: `implement_subclass`
-- **POST**: generic (from the schema)
+- **POST**: stateful (hand-written)
   - Access: /: Sys.Modify
   - Required: `name` (+3 optional)
   - Errors: `param_name_ipset_does_not`, `param_name_ipset_does_already`, `param_name_ipset_already_exists`, `implement_subclass`
 
 ### `/cluster/firewall/ipset/{name}`
 
-- **DELETE**: generic (from the schema)
+- **DELETE**: stateful (hand-written)
   - Access: /: Sys.Modify
   - Required: `name` (+1 optional)
   - Errors: `ipset_not_empty`, `implement_subclass`
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /: Sys.Audit
   - Required: `name`
   - Errors: `implement_subclass`
-- **POST**: generic (from the schema)
+- **POST**: stateful (hand-written)
   - Access: /: Sys.Modify
   - Required: `cidr`, `name` (+2 optional)
   - Errors: `param_cidr_zero_prefix_alias`, `param_cidr_address_already_exists`, `param_cidr_zero_prefix_not`, `implement_subclass`, `no_such_alias`, `value_does_not_look_like`
 
 ### `/cluster/firewall/ipset/{name}/{cidr}`
 
-- **DELETE**: generic (from the schema)
+- **DELETE**: stateful (hand-written)
   - Access: /: Sys.Modify
   - Required: `cidr`, `name` (+1 optional)
   - Errors: `implement_subclass`
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /: Sys.Audit
   - Required: `cidr`, `name`
   - Errors: `param_cidr_no_such_ip`, `implement_subclass`
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /: Sys.Modify
   - Required: `cidr`, `name` (+3 optional)
   - Errors: `param_cidr_no_such_ip`, `implement_subclass`
 
 ### `/cluster/firewall/macros`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: any logged-in user
   - Required: none
 
 ### `/cluster/firewall/options`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /: Sys.Audit
   - Required: none
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /: Sys.Modify
   - Required: none (+8 optional)
   - Errors: `param_delete_no_such_option`, `no_test_directory_specified`, `unable_apply_firewall_changes`
 
 ### `/cluster/firewall/refs`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /: Sys.Audit
   - Required: none (+1 optional)
 
 ### `/cluster/firewall/rules`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /: Sys.Audit
   - Required: none
   - Errors: `implement_subclass`
-- **POST**: generic (from the schema)
+- **POST**: stateful (hand-written)
   - Access: /: Sys.Modify
   - Required: `action`, `type` (+13 optional)
   - Errors: `implement_subclass`, `unknown_rule_env`, `parameter_verification_failed`, `detected_mixed_ipv_ipv_addresses`
 
 ### `/cluster/firewall/rules/{pos}`
 
-- **DELETE**: generic (from the schema)
+- **DELETE**: stateful (hand-written)
   - Access: /: Sys.Modify
   - Required: none (+2 optional)
   - Errors: `no_rule_position`, `implement_subclass`
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /: Sys.Audit
   - Required: none (+1 optional)
   - Errors: `no_rule_position`, `implement_subclass`
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /: Sys.Modify
   - Required: none (+17 optional)
   - Errors: `no_rule_position`, `implement_subclass`, `param_delete_no_such_property`, `param_delete_unable_delete_required`, `unknown_rule_env`, `parameter_verification_failed`, `detected_mixed_ipv_ipv_addresses`
@@ -2247,36 +2247,36 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/firewall/options`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /nodes/{node}: Sys.Audit
   - Required: `node`
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /nodes/{node}: Sys.Modify
   - Required: `node` (+21 optional)
   - Errors: `param_delete_no_such_option`
 
 ### `/nodes/{node}/firewall/rules`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /nodes/{node}: Sys.Audit
   - Required: `node`
   - Errors: `implement_subclass`
-- **POST**: generic (from the schema)
+- **POST**: stateful (hand-written)
   - Access: /nodes/{node}: Sys.Modify
   - Required: `action`, `node`, `type` (+13 optional)
   - Errors: `implement_subclass`, `unknown_rule_env`, `parameter_verification_failed`, `detected_mixed_ipv_ipv_addresses`
 
 ### `/nodes/{node}/firewall/rules/{pos}`
 
-- **DELETE**: generic (from the schema)
+- **DELETE**: stateful (hand-written)
   - Access: /nodes/{node}: Sys.Modify
   - Required: `node` (+2 optional)
   - Errors: `no_rule_position`, `implement_subclass`
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /nodes/{node}: Sys.Audit
   - Required: `node` (+1 optional)
   - Errors: `no_rule_position`, `implement_subclass`
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /nodes/{node}: Sys.Modify
   - Required: `node` (+17 optional)
   - Errors: `no_rule_position`, `implement_subclass`, `param_delete_no_such_property`, `param_delete_unable_delete_required`, `unknown_rule_env`, `parameter_verification_failed`, `detected_mixed_ipv_ipv_addresses`
@@ -2384,67 +2384,67 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/lxc/{vmid}/firewall/aliases`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `node`, `vmid`
   - Errors: `implement_subclass`
-- **POST**: generic (from the schema)
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `cidr`, `name`, `node`, `vmid` (+1 optional)
   - Errors: `param_name_alias_already_exists`, `implement_subclass`
 
 ### `/nodes/{node}/lxc/{vmid}/firewall/aliases/{name}`
 
-- **DELETE**: generic (from the schema)
+- **DELETE**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `name`, `node`, `vmid` (+1 optional)
   - Errors: `implement_subclass`
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `name`, `node`, `vmid`
   - Errors: `param_name_no_such_alias`, `implement_subclass`
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `cidr`, `name`, `node`, `vmid` (+3 optional)
   - Errors: `param_name_no_such_alias`, `param_name_alias_already_exists`, `implement_subclass`
 
 ### `/nodes/{node}/lxc/{vmid}/firewall/ipset`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `node`, `vmid`
   - Errors: `implement_subclass`
-- **POST**: generic (from the schema)
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `name`, `node`, `vmid` (+3 optional)
   - Errors: `param_name_ipset_does_not`, `param_name_ipset_does_already`, `param_name_ipset_already_exists`, `implement_subclass`
 
 ### `/nodes/{node}/lxc/{vmid}/firewall/ipset/{name}`
 
-- **DELETE**: generic (from the schema)
+- **DELETE**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `name`, `node`, `vmid` (+1 optional)
   - Errors: `ipset_not_empty`, `implement_subclass`
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `name`, `node`, `vmid`
   - Errors: `implement_subclass`
-- **POST**: generic (from the schema)
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `cidr`, `name`, `node`, `vmid` (+2 optional)
   - Errors: `param_cidr_zero_prefix_alias`, `param_cidr_address_already_exists`, `param_cidr_zero_prefix_not`, `implement_subclass`, `no_such_alias`, `value_does_not_look_like`
 
 ### `/nodes/{node}/lxc/{vmid}/firewall/ipset/{name}/{cidr}`
 
-- **DELETE**: generic (from the schema)
+- **DELETE**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `cidr`, `name`, `node`, `vmid` (+1 optional)
   - Errors: `implement_subclass`
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `cidr`, `name`, `node`, `vmid`
   - Errors: `param_cidr_no_such_ip`, `implement_subclass`
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `cidr`, `name`, `node`, `vmid` (+3 optional)
   - Errors: `param_cidr_no_such_ip`, `implement_subclass`
@@ -2457,42 +2457,42 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/lxc/{vmid}/firewall/options`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `node`, `vmid`
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `node`, `vmid` (+12 optional)
   - Errors: `param_delete_no_such_option`, `can_t_lock_firewall_config`
 
 ### `/nodes/{node}/lxc/{vmid}/firewall/refs`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `node`, `vmid` (+1 optional)
 
 ### `/nodes/{node}/lxc/{vmid}/firewall/rules`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `node`, `vmid`
   - Errors: `implement_subclass`
-- **POST**: generic (from the schema)
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `action`, `node`, `type`, `vmid` (+13 optional)
   - Errors: `implement_subclass`, `unknown_rule_env`, `parameter_verification_failed`, `detected_mixed_ipv_ipv_addresses`
 
 ### `/nodes/{node}/lxc/{vmid}/firewall/rules/{pos}`
 
-- **DELETE**: generic (from the schema)
+- **DELETE**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `node`, `vmid` (+2 optional)
   - Errors: `no_rule_position`, `implement_subclass`
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `node`, `vmid` (+1 optional)
   - Errors: `no_rule_position`, `implement_subclass`
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `node`, `vmid` (+17 optional)
   - Errors: `no_rule_position`, `implement_subclass`, `param_delete_no_such_property`, `param_delete_unable_delete_required`, `unknown_rule_env`, `parameter_verification_failed`, `detected_mixed_ipv_ipv_addresses`
@@ -3009,67 +3009,67 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/qemu/{vmid}/firewall/aliases`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `node`, `vmid`
   - Errors: `implement_subclass`
-- **POST**: generic (from the schema)
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `cidr`, `name`, `node`, `vmid` (+1 optional)
   - Errors: `param_name_alias_already_exists`, `implement_subclass`
 
 ### `/nodes/{node}/qemu/{vmid}/firewall/aliases/{name}`
 
-- **DELETE**: generic (from the schema)
+- **DELETE**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `name`, `node`, `vmid` (+1 optional)
   - Errors: `implement_subclass`
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `name`, `node`, `vmid`
   - Errors: `param_name_no_such_alias`, `implement_subclass`
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `cidr`, `name`, `node`, `vmid` (+3 optional)
   - Errors: `param_name_no_such_alias`, `param_name_alias_already_exists`, `implement_subclass`
 
 ### `/nodes/{node}/qemu/{vmid}/firewall/ipset`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `node`, `vmid`
   - Errors: `implement_subclass`
-- **POST**: generic (from the schema)
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `name`, `node`, `vmid` (+3 optional)
   - Errors: `param_name_ipset_does_not`, `param_name_ipset_does_already`, `param_name_ipset_already_exists`, `implement_subclass`
 
 ### `/nodes/{node}/qemu/{vmid}/firewall/ipset/{name}`
 
-- **DELETE**: generic (from the schema)
+- **DELETE**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `name`, `node`, `vmid` (+1 optional)
   - Errors: `ipset_not_empty`, `implement_subclass`
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `name`, `node`, `vmid`
   - Errors: `implement_subclass`
-- **POST**: generic (from the schema)
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `cidr`, `name`, `node`, `vmid` (+2 optional)
   - Errors: `param_cidr_zero_prefix_alias`, `param_cidr_address_already_exists`, `param_cidr_zero_prefix_not`, `implement_subclass`, `no_such_alias`, `value_does_not_look_like`
 
 ### `/nodes/{node}/qemu/{vmid}/firewall/ipset/{name}/{cidr}`
 
-- **DELETE**: generic (from the schema)
+- **DELETE**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `cidr`, `name`, `node`, `vmid` (+1 optional)
   - Errors: `implement_subclass`
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `cidr`, `name`, `node`, `vmid`
   - Errors: `param_cidr_no_such_ip`, `implement_subclass`
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `cidr`, `name`, `node`, `vmid` (+3 optional)
   - Errors: `param_cidr_no_such_ip`, `implement_subclass`
@@ -3082,42 +3082,42 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/qemu/{vmid}/firewall/options`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `node`, `vmid`
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `node`, `vmid` (+12 optional)
   - Errors: `param_delete_no_such_option`, `can_t_lock_firewall_config`
 
 ### `/nodes/{node}/qemu/{vmid}/firewall/refs`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `node`, `vmid` (+1 optional)
 
 ### `/nodes/{node}/qemu/{vmid}/firewall/rules`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `node`, `vmid`
   - Errors: `implement_subclass`
-- **POST**: generic (from the schema)
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `action`, `node`, `type`, `vmid` (+13 optional)
   - Errors: `implement_subclass`, `unknown_rule_env`, `parameter_verification_failed`, `detected_mixed_ipv_ipv_addresses`
 
 ### `/nodes/{node}/qemu/{vmid}/firewall/rules/{pos}`
 
-- **DELETE**: generic (from the schema)
+- **DELETE**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `node`, `vmid` (+2 optional)
   - Errors: `no_rule_position`, `implement_subclass`
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `node`, `vmid` (+1 optional)
   - Errors: `no_rule_position`, `implement_subclass`
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Config.Network
   - Required: `node`, `vmid` (+17 optional)
   - Errors: `no_rule_position`, `implement_subclass`, `param_delete_no_such_property`, `param_delete_unable_delete_required`, `unknown_rule_env`, `parameter_verification_failed`, `detected_mixed_ipv_ipv_addresses`
@@ -3650,19 +3650,19 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
   - Access: /storage/{storage}: Datastore.Audit or Datastore.AllocateSpace
   - Required: `node`, `storage` (+2 optional)
   - Errors: `no_storage_id_specified`, `storage_does_not_exist`, `connection_check_storage_failed`, `storage_not_online`
-- **POST**: generic (from the schema)
+- **POST**: stateful (hand-written)
   - Access: /storage/{storage}: Datastore.AllocateSpace
   - Required: `filename`, `node`, `size`, `storage`, `vmid` (+1 optional)
   - Errors: `param_size_unable_parse_size`, `param_format_different_storage_formats`, `no_storage_id_specified`, `no_vmid_specified`, `storage_does_not_exist`, `vmid_contains_illegal_characters`, `connection_check_storage_failed`, `storage_not_online`
 
 ### `/nodes/{node}/storage/{storage}/content/{volume}`
 
-- **DELETE**: generic (from the schema), starts a task
+- **DELETE**: stateful (hand-written)
   - Access: any logged-in user
   - Required: `node`, `volume` (+2 optional)
   - Errors: `param_volume`, `param_volume_no_storage_specified`, `no_storage_id_specified`, `storage_does_not_exist`
   - Errors in the task: `base_volume_still_use_linked`, `connection_check_storage_failed`, `storage_not_online`
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: any logged-in user
   - Required: `node`, `volume` (+1 optional)
   - Errors: `volume_size_info_failed_no`, `volume_size_info_failed_no_2`, `volume_has_size_zero`, `param_volume`, `param_volume_no_storage_specified`, `unable_use_volume_content_type`, `cannot_access_snippet_non_snippet`, `missing_privileges_access`, `only_root_can_pass_arbitrary`, `no_storage_id_specified`, `storage_does_not_exist`
@@ -3671,7 +3671,7 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
   - Required: `node`, `target`, `volume` (+2 optional)
   - Errors: `param_volume`, `param_volume_no_storage_specified`
   - Errors in the task: `internal_error_unexpected_output_mtunnel`, `internal_error_bad_output_mtunnel`, `failed_get_ip_network`, `cannot_migrate_storage_type`, `unable_parse_volume_id`, `no_storage_id_specified`, `storage_does_not_exist`, `unsupported_format_storage_type`
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: any logged-in user
   - Required: `node`, `volume` (+3 optional)
   - Errors: `param_volume`, `param_volume_no_storage_specified`, `unable_use_volume_content_type`, `cannot_access_snippet_non_snippet`, `missing_privileges_access`, `only_root_can_pass_arbitrary`, `number_protected_backups_per_guest`, `no_storage_id_specified`, `storage_does_not_exist`
@@ -3747,7 +3747,7 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/storage/{storage}/status`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /storage/{storage}: Datastore.Audit or Datastore.AllocateSpace
   - Required: `node`, `storage`
   - Errors: `param_storage_no_such_storage`, `storage_disabled`
@@ -3889,32 +3889,32 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/pools`
 
-- **DELETE**: generic (from the schema)
+- **DELETE**: stateful (hand-written)
   - Access: /pool/{poolid}: Pool.Allocate
   - Required: `poolid`
   - Errors: `pool_does_not_exist`, `pool_not_empty_contains_pool`, `pool_not_empty_contains`, `pool_not_empty_contains_storage`, `no_storage_id_specified`, `storage_does_not_exist`
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: any logged-in user
   - Required: none (+2 optional)
   - Errors: `pool_does_not_exist`, `no_storage_id_specified`, `storage_does_not_exist`
-- **POST**: generic (from the schema)
+- **POST**: stateful (hand-written)
   - Access: /pool/{poolid}: Pool.Allocate
   - Required: `poolid` (+1 optional)
   - Errors: `pool_already_exists`, `parent_pool_does_not_exist`, `pool_name_must_start_letter`
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /pool/{poolid}: Pool.Allocate
   - Required: `poolid` (+5 optional)
   - Errors: `pool_does_not_exist`, `not_pool_member`, `already_pool_member`, `belongs_already_pool_allow_move`, `storage_not_pool_member`, `storage_already_pool_member`
 
 ### `/pools/{poolid}`
 
-- **DELETE**: generic (from the schema)
+- **DELETE**: stateful (hand-written)
   - Access: /pool/{poolid}: Pool.Allocate
   - Required: `poolid`
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /pool/{poolid}: Pool.Audit
   - Required: `poolid` (+1 optional)
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /pool/{poolid}: Pool.Allocate
   - Required: `poolid` (+5 optional)
 
@@ -3922,26 +3922,26 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/storage`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: any logged-in user
   - Required: none (+1 optional)
   - Errors: `no_storage_id_specified`, `storage_does_not_exist`
-- **POST**: generic (from the schema)
+- **POST**: stateful (hand-written)
   - Access: /storage: Datastore.Allocate
   - Required: `storage`, `type` (+59 optional)
   - Errors: `storage_id_already_defined`, `no_storage_id_specified`, `storage_does_not_exist`
 
 ### `/storage/{storage}`
 
-- **DELETE**: generic (from the schema)
+- **DELETE**: stateful (hand-written)
   - Access: /storage: Datastore.Allocate
   - Required: `storage`
   - Errors: `can_t_remove_storage_storage`, `no_storage_id_specified`, `storage_does_not_exist`
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /storage/{storage}: Datastore.Allocate
   - Required: `storage`
   - Errors: `no_storage_id_specified`, `storage_does_not_exist`
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /storage: Datastore.Allocate
   - Required: `storage` (+50 optional)
   - Errors: `no_such_option`, `unable_delete_required_option`, `unable_delete_fixed_option`, `cannot_set_delete_property_same`, `no_storage_id_specified`, `storage_does_not_exist`

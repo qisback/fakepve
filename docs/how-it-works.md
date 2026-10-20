@@ -9,7 +9,7 @@ Contents: [the idea](#the-idea) | [modules](#modules) | [a request's path](#a-re
 The fake needs to know what a call returns and what it can fail with. It does not reimplement PVE. Two ideas follow:
 
 1. **Outcomes and errors, not behaviour.** The PVE API schema says what every endpoint accepts and answers with; the PVE sources say which errors each one can raise. Both are vendored as data. Most endpoints are answered from the schema alone: a write succeeds and changes nothing, a read returns a value of the right shape.
-2. **Behaviour only where a client reads back what it did.** A small set of endpoints (login, VM power, config, tasks, storage content) is hand-written and keeps state, because a client starts a VM and then asks whether it is running. These override the generic answers.
+2. **Behaviour only where a client reads back what it did.** A small set of endpoints (login, VM power, config, tasks, storage, pools, the firewall) is hand-written and keeps state, because a client starts a VM and then asks whether it is running, or creates a pool and reads it back. These override the generic answers.
 
 It stays one Python process on aiohttp. No PVE, QEMU, Ceph or corosync is run, and no PVE code is ported: only strings and the schema are taken from PVE.
 
@@ -20,6 +20,10 @@ It stays one Python process on aiohttp. No PVE, QEMU, Ceph or corosync is run, a
 | `fakepve/server.py` | `FakePve`: the aiohttp application, the middleware, and the hand-written routes (access, version, nodes, cluster, tasks, storage, VM status/config/agent/consoles). |
 | `fakepve/model.py` | `Model` (the state and the scenario methods) and `FakeVm`; `PveError` and `TaskError`. `FakePve` inherits from `Model`. |
 | `fakepve/lxc.py` | `FakeCt` and `LxcApi`, a mixin of `FakePve`: the container state and the stateful `lxc` routes. |
+| `fakepve/routing.py` | `StatefulRoutes`: registers the `_routes_*` tables of the modules below, and the helpers they share (PVE's digest check, `die`, `param_error`). |
+| `fakepve/storage.py` | `StorageApi`: `/storage`, the node's storage status and the content volumes; `StorageTransfer`: `download-url` and `upload`. |
+| `fakepve/pools.py` | `PoolsApi`: `/pools`. |
+| `fakepve/firewall.py` | `FirewallApi`: the cluster, node and guest firewall, and the rule check (`verify_rule`). |
 | `fakepve/generic.py` | `GenericApi`, a mixin of `FakePve`: the catch-all route, which checks parameters and permissions against the schema and builds answers. |
 | `fakepve/schema.py` | The schema: path matching, parameter validation with PVE's wording, sample values for `returns`. |
 | `fakepve/errors.py` | The error catalogue: lookup by name, cross-cutting errors, placeholder filling. |
@@ -58,13 +62,21 @@ Every route is also served under `/api2/extjs`, with the same handlers, authenti
 
 - `access/ticket`, `access/password`, `version`;
 - `nodes`, `cluster/resources`, `cluster/status`, `cluster/ceph/status`;
-- per node: `tasks`, `tasks/{upid}/status`, `tasks/{upid}/log`, `storage`, `storage/{s}/content`, `storage/{s}/download-url`, `storage/{s}/upload`;
+- per node: `tasks`, `tasks/{upid}/status`, `tasks/{upid}/log`, `storage/{s}/download-url`, `storage/{s}/upload`;
 - per VM: `status/current`, `status/{start,stop,shutdown,reboot,reset,suspend,resume}`, `config` (GET, PUT, and POST as a task), `pending`, `termproxy`, `vncproxy`, `vncwebsocket`, `agent/{command}` (every command in the schema), `monitor`;
 - per container (`lxc.py`): the list and create, destroy, `status/current`, `status/{start,stop,shutdown,reboot,suspend,resume}`, `config` (GET and PUT), `pending`, `clone`, `template`, `migrate` (GET and POST), `resize`, `interfaces`, `snapshot` (list, create, delete, `rollback`, and each snapshot's `config`).
 
 They follow PVE's rules: config writes on a running VM go to `pending` unless the key is hot-pluggable; a CD-ROM media change applies at once; `reboot` and a cold start apply pending changes and `reset` does not; `PUT config` checks the `digest`, validates the boot order against the VM's devices, and checks the privilege each key needs (`hookscript` is root only); starting a running VM, or acting on a stopped one, gets PVE's messages; templates cannot be started.
 
-One route family is claimed as a whole, so it hides generic answers: `status/{action}` (an action without a `_do_` handler answers 501). `agent/{command}` is claimed too, but every command of the schema is answered there (see `agent.py`). The [endpoint reference](reference/endpoints.md) marks the methods affected as "routed to a hand-written handler that answers 501". The container routes are registered one by one, and each runs the schema's checks first (`answer`), so a request fails for the same reasons whether or not the container exists. The rest of the LXC endpoints are generic (see the gaps below).
+One route family is claimed as a whole, so it hides generic answers: `status/{action}` (an action without a `_do_` handler answers 501). `agent/{command}` is claimed too, but every command of the schema is answered there (see `agent.py`). The [endpoint reference](reference/endpoints.md) marks the methods affected as "routed to a hand-written handler that answers 501". The storage, pool and firewall endpoints are listed in [the next section](#storage-pools-and-the-firewall). The container routes are registered one by one, and each runs the schema's checks first (`answer`), so a request fails for the same reasons whether or not the container exists. The rest of the LXC endpoints are generic (see the gaps below); a container's firewall is served by `firewall.py`.
+
+### Storage, pools and the firewall
+
+These three areas live in their own modules and are registered from tables (`StatefulRoutes`): each lists `(method, schema path, handler)`, and the request goes through the same schema checks as a generic one (parameters, permissions, the node must exist) before the handler runs, so a handler only deals with PVE's own rules. They follow the PVE sources, not the schema alone:
+
+- **Storage** (`pve-storage`: `API2/Storage/Config.pm`, `Status.pm`, `Content.pm`, and each plugin's `options()` and `plugindata()`). `pve.storages` is the storage.cfg: the keys outside `files`, `avail`, `active`, `volumes` and `total` are options. Create, update and delete use the type's option table (required options, fixed ones, unexpected ones, `content` cut to what the type supports, `path` defaulting to `/mnt/pve/<id>` for NFS, CIFS and CephFS), the digest of the whole file, and PVE's error text with `create storage failed: `, `update storage failed: ` and `delete storage failed: ` where PVE adds them. Node status asks the same questions as `storage_info`: `disable`, a `nodes` list, `content`, `target`. Volumes are kept per storage (`pve.storages[name]['volumes']`) and named as the plugin names them (`100/vm-100-disk-0.qcow2` on file storages, `vm-100-disk-0` on block ones).
+- **Pools** (`pve-manager`: `API2/Pool.pm`). `pve.pools` maps a pool to its guest ids, `pve.pool_info` has the comment and the storages. An update is applied to a copy and kept only if every member change passes, as PVE writes `user.cfg` once at the end.
+- **Firewall** (`pve-firewall`: `API2/Firewall/*.pm`, `Firewall.pm`). Cluster, node and guest each hold options, rules, aliases and IP sets; the cluster also holds the security groups. A guest's config is kept by its id whatever it is (PVE does not look for the guest either), so `qemu` and `lxc` paths read the same rules. Digests are PVE's: SHA-1 over `key:value` lines of each entry, sorted by key. Rules go on top when created and start disabled unless `enable` is given; `moveto` puts the rule in front of the one that was at that position.
 
 ## The generic handler
 
@@ -129,6 +141,9 @@ Handlers raise `PveError(status, message, errors)`. Named errors come from `erro
 Stated plainly, so nobody has to find them by surprise:
 
 - **Most of the API keeps no state.** Outside the hand-written routes a write succeeds and changes nothing, and a read returns a made-up value of the right shape. Create a VM through `POST /nodes/pve1/qemu` and it does not exist afterwards; add VMs with `pve.add_vm` or the guests file.
+- **Storage is configuration and metadata.** Nothing is mounted or connected (a storage is never "not online" unless a scenario says so), volumes are records with a size, and a disk image takes `size` bytes from `avail` but holds no data. Plugin checks beyond the option tables (a reachable NFS server, an existing volume group, the `mkdir` warnings) are not made. Only the file storages (`dir`, `nfs`, `cifs`, `cephfs`, `btrfs`) and the common block ones (`lvm`, `lvmthin`, `zfspool`, `rbd`, `zfs`, `iscsi`, `pbs`) have an option table; other types are accepted with any option.
+- **The firewall is configuration only.** Nothing is enforced, `log` is empty, and macros are checked by name, not applied. The protocol and service names a rule can use are a sample of `/etc/protocols` and `/etc/services` (PVE reads the whole files), and the Net::IP text of an invalid address is replaced by a short message. SDN VNet firewalls and IP sets are not modelled.
+- **Pool permission failures read differently.** PVE raises them inside its user.cfg lock, so they come back as `500 update pools failed: Permission check failed (...)`, which the fake repeats.
 - **Containers are modelled in part.** Create, destroy, power state, config with pending and hotplug rules, snapshots, clone, template, migrate, resize and interfaces keep state (`lxc.py`). Volumes are names only: there is no storage content, so a template file is not looked for (`pve.volume_exists` is the hook), and sizes are not counted against a storage. `restore` creates an empty container. `move_volume`, `remote_migrate`, `feature`, the console endpoints, `rrd` and the firewall stay generic; `GET /cluster/nextid` does not know containers; `ssh-public-keys` and `password` are accepted and dropped; a live (`online`) migration fails in its task, as PVE's does. Hotplug of a new mount point, a network change or a memory limit always succeeds: PVE's runtime failures (cgroup, veth) are not simulated.
 - **Guest agent commands are shapes, not behaviour.** `ping`, `get-osinfo` and `network-get-interfaces` read `vm.agent`, and `fsfreeze-*` keep a frozen flag. The rest answer plausible values, and `exec`, `exec-status`, `file-read` and `file-write` only record the request: nothing runs and no file is touched. `shutdown` and `suspend-*` do not change the VM.
 - **Two-factor logins stop at `NeedTFA`.** There is no second step to complete.

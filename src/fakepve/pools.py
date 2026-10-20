@@ -28,14 +28,14 @@ class PoolsApi(StatefulRoutes):
         meta = self.pool_info.setdefault(name, {'comment': None, 'storage': set()})
         return meta
 
-    def pool_of_vm(self, vmid):
+    def _pool_of_vm(self, vmid):
         """The pool a guest id is a member of, or None."""
         for name, ids in self.pools.items():
             if vmid in ids:
                 return name
         return None
 
-    def pool_of_storage(self, sid):
+    def _pool_of_storage(self, sid):
         """The pool a storage id is a member of, or None."""
         for name, meta in sorted(self.pool_info.items()):
             if sid in meta['storage'] and name in self.pools:
@@ -45,7 +45,7 @@ class PoolsApi(StatefulRoutes):
     def _sync_pools(self):
         """Keep each guest's `pool` attribute (shown in /cluster/resources) in step with membership."""
         for guest in list(self.vms) + list(getattr(self, 'cts', [])):
-            guest.pool = self.pool_of_vm(guest.vmid)
+            guest.pool = self._pool_of_vm(guest.vmid)
 
     def _guest_of(self, vmid):
         for guest in list(self.vms) + list(getattr(self, 'cts', [])):
@@ -69,7 +69,7 @@ class PoolsApi(StatefulRoutes):
                 store = self.storages.get(sid)
                 if store is None:
                     continue
-                node = (self.storage_nodes(sid) or sorted(self.nodes))[0]
+                node = (self._storage_nodes(sid) or sorted(self.nodes))[0]
                 members.append({'id': 'storage/{0}/{1}'.format(node, sid), 'type': 'storage', 'node': node,
                                 'storage': sid, 'status': 'available' if store.get('active', 1) else 'unknown',
                                 'plugintype': store.get('type', 'dir'), 'content': store.get('content', ''),

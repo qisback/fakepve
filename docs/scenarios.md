@@ -2,7 +2,7 @@
 
 A cookbook of the things a real cluster does to a client, and how to make the fake do them. Each recipe is a runnable snippet followed by exactly what the client sees. The snippets and their output are run by the test suite, so they cannot drift from the code.
 
-Contents: [setup](#setup) | [shutdowns](#shutdowns-and-slow-guests) | [start and stop](#start-stop-and-task-failures) | [locks](#locks) | [backup](#backup) | [migration](#migration) | [HA](#high-availability) | [quorum](#lost-quorum) | [node offline](#node-offline) | [network](#slow-and-flaky-networks) | [Ceph](#ceph) | [storage](#storage-full) | [permissions](#permissions) | [tickets](#expired-tickets-and-tokens) | [TFA](#two-factor-authentication) | [fail](#arbitrary-failures) | [catalogue](#errors-by-catalogue-name) | [guest agent](#guest-agent) | [pending](#pending-changes) | [containers](#containers)
+Contents: [setup](#setup) | [shutdowns](#shutdowns-and-slow-guests) | [start and stop](#start-stop-and-task-failures) | [locks](#locks) | [backup](#backup) | [migration](#migration) | [HA](#high-availability) | [quorum](#lost-quorum) | [node offline](#node-offline) | [network](#slow-and-flaky-networks) | [Ceph](#ceph) | [storage](#storage-full) | [storage, pools, firewall](#storage-pools-and-the-firewall) | [permissions](#permissions) | [tickets](#expired-tickets-and-tokens) | [TFA](#two-factor-authentication) | [fail](#arbitrary-failures) | [catalogue](#errors-by-catalogue-name) | [guest agent](#guest-agent) | [pending](#pending-changes) | [containers](#containers)
 
 ## Setup
 
@@ -466,6 +466,88 @@ unable to write to storage 'local': No space left on device
 ```
 
 The optional `size` parameter in the request is how large the fake pretends the download is (1 MiB if absent). It is not a PVE parameter, so strict clients will not send it; set `pve.storages['local']['avail']` below 1 MiB instead.
+
+## Storage, pools and the firewall
+
+Writes to these areas persist and reads reflect them, so a Terraform plan or an Ansible play can create something and read it back. They follow the PVE sources (`pve-storage`, `pve-manager`'s `Pool.pm`, `pve-firewall`) down to the messages. Nothing is mounted, no pool grants anything by itself and no packet is filtered: it is the configuration that is kept.
+
+A storage: create it, read it back, see the node's status change with the config, allocate a volume.
+
+<!-- run -->
+```python
+async with fake() as (pve, api):
+    show(await api.call('POST', '/storage', {'storage': 'vmstore', 'type': 'dir', 'path': '/srv/vmstore',
+                                             'content': 'images,iso'}))
+    _, cfg = await api.call('GET', '/storage/vmstore')
+    print({k: cfg['data'][k] for k in ('storage', 'type', 'path', 'content')})
+    show(await api.call('POST', '/storage', {'storage': 'vmstore', 'type': 'dir', 'path': '/srv/other'}))
+    await api.call('PUT', '/storage/vmstore', {'disable': 1})
+    status, body = await api.call('GET', '/nodes/pve1/storage/vmstore/content')
+    print(status, body['message'].strip())
+    await api.call('PUT', '/storage/vmstore', {'delete': 'disable'})
+    _, volid = await api.call('POST', '/nodes/pve1/storage/vmstore/content',
+                              {'filename': 'vm-100-disk-0.qcow2', 'vmid': 100, 'size': '4G'})
+    print(volid['data'])
+    _, listing = await api.call('GET', '/nodes/pve1/storage/vmstore/content')
+    print([(item['volid'], item['size']) for item in listing['data']])
+    _, status = await api.call('GET', '/nodes/pve1/storage/vmstore/status')
+    print(status['data']['used'])
+```
+
+<!-- output -->
+```text
+```
+
+A storage can be limited to some nodes (`nodes`), turned off (`disable`) or given other content types, and `/cluster/resources` and `/nodes/{node}/storage` follow. `type` decides which options are allowed and which are required: `lvm` needs `vgname`, `nfs` needs `server` and `export`, and an option the type does not have is `unexpected property`.
+
+A pool: members are guests and storages, and the pool shows in the resources.
+
+<!-- run -->
+```python
+async with fake() as (pve, api):
+    pve.add_vm(100, 'web1')
+    await api.call('POST', '/pools', {'poolid': 'dev', 'comment': 'development'})
+    await api.call('PUT', '/pools/dev', {'vms': '100', 'storage': 'local'})
+    _, pool = await api.call('GET', '/pools?poolid=dev')
+    print([(m['id'], m['type']) for m in pool['data'][0]['members']])
+    _, resources = await api.call('GET', '/cluster/resources?type=vm')
+    print(resources['data'][0]['pool'])
+    show(await api.call('PUT', '/pools/dev', {'vms': '100'}))
+    show(await api.call('DELETE', '/pools/dev'))
+    await api.call('PUT', '/pools/dev', {'vms': '100', 'storage': 'local', 'delete': 1})
+    show(await api.call('DELETE', '/pools/dev'))
+```
+
+<!-- output -->
+```text
+```
+
+The firewall: rules are an ordered list, new rules go on top and start disabled, and `digest` guards against a second writer.
+
+<!-- run -->
+```python
+async with fake() as (pve, api):
+    await api.call('POST', '/cluster/firewall/aliases', {'name': 'office', 'cidr': '198.51.100.0/24'})
+    for port in (22, 443):
+        await api.call('POST', '/cluster/firewall/rules', {'type': 'in', 'action': 'ACCEPT', 'proto': 'tcp',
+                                                           'dport': str(port), 'source': 'office', 'enable': 1})
+    _, rules = await api.call('GET', '/cluster/firewall/rules')
+    print([(r['pos'], r['dport'], r['source'], r['ipversion']) for r in rules['data']])
+    digest = rules['data'][0]['digest']
+    show(await api.call('PUT', '/cluster/firewall/rules/1', {'moveto': 0, 'digest': digest}))
+    show(await api.call('PUT', '/cluster/firewall/rules/1', {'comment': 'late', 'digest': digest}))
+    show(await api.call('POST', '/cluster/firewall/rules', {'type': 'in', 'action': 'ACCEPT', 'dport': '80'}))
+    show(await api.call('POST', '/nodes/pve1/qemu/100/firewall/rules', {'type': 'in', 'action': 'DROP',
+                                                                          'source': '+nosuchset'}))
+    _, rules = await api.call('GET', '/cluster/firewall/rules')
+    print([r['dport'] for r in rules['data']])
+```
+
+<!-- output -->
+```text
+```
+
+A guest's firewall is kept by its id: the `qemu` and the `lxc` path of the same id read the same rules, and neither needs the guest to exist, as on PVE.
 
 ## Permissions
 

@@ -63,7 +63,7 @@ async def test_shutdown(tmp_path):
 
 - **Logins as PVE has them:** tickets with CSRF tokens and expiry, API tokens, optional per-path permissions, two-factor logins (the `NeedTFA` answer).
 - **Every endpoint of the PVE 9 API schema answers:** 680 methods on 449 paths. Parameters, including property strings such as `net0=virtio,bridge=vmbr0`, are validated with PVE's wording (HTTP 400 with per-field `errors`), under `/api2/json` and `/api2/extjs`; permissions are checked as the schema states them, and answers have the shape PVE's `returns` declares.
-- **Stateful where a client reads back what it did:** VM power, config and pending changes, tasks with real UPIDs that run, hold the VM config lock and keep a log, storage content, guest agent, consoles over websocket.
+- **Stateful where a client reads back what it did:** VM power, config and pending changes, tasks with real UPIDs that run, hold the VM config lock and keep a log, storage config and content, pools, the firewall, guest agent, consoles over websocket.
 - **Real errors, by name:** 2314 errors PVE can return, catalogued per method from the PVE sources, each raised with `pve.fail(..., error='name')`. Errors raised in a PVE worker end a task with `TASK ERROR` as they do on a node.
 - **Faults on demand:** slow or hanging guests, config and backup locks, migrations, HA, lost quorum, offline nodes, slow and flaky networks, Ceph slow or down, full storage, expired tickets, 403s, arbitrary failures.
 - **Time you control:** `time_scale` turns PVE seconds into real ones, from "every task finishes at once" to real time.

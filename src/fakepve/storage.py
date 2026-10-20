@@ -123,7 +123,7 @@ class StorageApi(StatefulRoutes):
 
     # ---------------------------------------------------------------- config
 
-    def storage_digest(self):
+    def _storage_digest(self):
         """The digest of storage.cfg: it changes with any storage option."""
         view = dict((name, self._options_of(store)) for name, store in sorted(self.storages.items()))
         return sha1(repr(sorted((n, sorted((k, str(v)) for k, v in o.items())) for n, o in view.items())))
@@ -137,7 +137,7 @@ class StorageApi(StatefulRoutes):
         cfg = self._options_of(self.storages[name])
         cfg.setdefault('content', '')
         cfg['storage'] = name
-        cfg['digest'] = self.storage_digest()
+        cfg['digest'] = self._storage_digest()
         return cfg
 
     def _store(self, name):
@@ -215,7 +215,7 @@ class StorageApi(StatefulRoutes):
         sid = v['storage']
         fail = 'update storage failed: '
         try:
-            check_digest(self.storage_digest(), v.get('digest'))
+            check_digest(self._storage_digest(), v.get('digest'))
         except PveError as e:
             raise die(fail + e.message) from e
         store = self.storages.get(sid)
@@ -265,15 +265,15 @@ class StorageApi(StatefulRoutes):
 
     # ------------------------------------------------------------ node status
 
-    def storage_enabled(self, name, node):
+    def _storage_enabled(self, name, node):
         """PVE::Storage::storage_check_enabled: not disabled, and configured for the node."""
         store = self.storages[name]
         nodes = split_list(store.get('nodes'))
         return not store.get('disable') and (not nodes or node in nodes)
 
-    def storage_nodes(self, name):
+    def _storage_nodes(self, name):
         """The nodes the storage is enabled on."""
-        return [n for n in sorted(self.nodes) if self.storage_enabled(name, n)]
+        return [n for n in sorted(self.nodes) if self._storage_enabled(name, n)]
 
     def _check_enabled(self, name, node):
         store = self._store(name)
@@ -303,7 +303,7 @@ class StorageApi(StatefulRoutes):
 
     def _status_item(self, name, node, formats=False):
         store = self.storages[name]
-        enabled = self.storage_enabled(name, node)
+        enabled = self._storage_enabled(name, node)
         active = 1 if enabled and store.get('active', 1) else 0
         total, used, avail = self._space(store) if active else (0, 0, 0)
         item = {'type': store.get('type', 'dir'), 'content': store.get('content', ''), 'enabled': 1 if enabled else 0,
@@ -321,7 +321,7 @@ class StorageApi(StatefulRoutes):
         wanted = split_list(v.get('content'))
         info = {}
         for name, store in self.storages.items():
-            enabled = self.storage_enabled(name, node)
+            enabled = self._storage_enabled(name, node)
             if wanted and (not enabled or not any(c in split_list(store.get('content')) for c in wanted)):
                 continue
             info[name] = self._status_item(name, node, v.get('format'))
@@ -336,8 +336,8 @@ class StorageApi(StatefulRoutes):
                 continue
             target = v.get('target')
             if target and target != node:
-                if not (self.storages[name].get('shared') and self.storage_enabled(name, node)
-                        and self.storage_enabled(name, target)):
+                if not (self.storages[name].get('shared') and self._storage_enabled(name, node)
+                        and self._storage_enabled(name, target)):
                     continue
             data = dict(data, storage=name)
             if data['total']:
@@ -350,15 +350,15 @@ class StorageApi(StatefulRoutes):
             raise param_error(storage='No such storage.')
         return self._status_item(v['storage'], v['node'])
 
-    def storage_resource(self, node, name):
+    def _storage_resource(self, node, name):
         """The /cluster/resources entry of a storage on a node, or None if it is not enabled there."""
         store = self.storages[name]
-        if not self.storage_enabled(name, node):
+        if not self._storage_enabled(name, node):
             return None
         item = {'id': 'storage/{0}/{1}'.format(node, name), 'type': 'storage', 'node': node, 'storage': name,
                 'status': 'available' if store.get('active') else 'unknown', 'plugintype': store.get('type', 'dir'),
                 'content': store.get('content', ''), 'shared': 1 if store.get('shared') else 0}
-        pool = self.pool_of_storage(name) if hasattr(self, 'pool_of_storage') else None
+        pool = self._pool_of_storage(name) if hasattr(self, '_pool_of_storage') else None
         if pool:
             item['pool'] = pool
         return item
@@ -414,7 +414,7 @@ class StorageApi(StatefulRoutes):
         ext = volname.rsplit('.', 1)[-1] if '.' in volname else ''
         return ext if ext in FORMAT_EXT else 'raw'
 
-    def parse_volname(self, store, volname):
+    def _parse_volname(self, store, volname):
         """(vtype, vmid or None, format) of a volume name, or PVE's die."""
         kind = store.get('type', 'dir')
         if kind in BLOCK_NAME:
@@ -578,7 +578,7 @@ class StorageApi(StatefulRoutes):
             volname = volume
         volid = '{0}:{1}'.format(sid, volname)
         store = self._store(sid)
-        vtype, owner, fmt = self.parse_volname(store, volname)
+        vtype, owner, fmt = self._parse_volname(store, volname)
         return sid, volname, volid, store, vtype, owner, fmt
 
     def _find_volume(self, sid, volname):

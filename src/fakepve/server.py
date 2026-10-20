@@ -467,7 +467,7 @@ class FakePve(StorageTransfer, StorageApi, PoolsApi, FirewallApi, GenericApi, Lx
                              'status': 'online' if state.get('online', True) else 'offline'})
         if kind in (None, 'storage'):
             for node in sorted(self.nodes):
-                data.extend(item for item in (self.storage_resource(node, name) for name in self.storages) if item)
+                data.extend(item for item in (self._storage_resource(node, name) for name in self.storages) if item)
         return ok(data)
 
     async def _cluster_status(self, request):

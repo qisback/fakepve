@@ -22,7 +22,7 @@ Log in as `root@pam` with password `secret`. [Getting started](getting-started.m
 
 - **Logins as PVE has them:** tickets with CSRF tokens and expiry, API tokens, optional per-path permissions, two-factor logins (the `NeedTFA` answer).
 - **Every endpoint of the PVE 9 API schema answers:** 680 methods on 449 paths, validated with PVE's wording, under `/api2/json` and `/api2/extjs`. See the [endpoint reference](reference/endpoints.md).
-- **Stateful where a client reads back what it did:** VM power, config and pending changes, tasks with real UPIDs, storage content, guest agent, consoles.
+- **Stateful where a client reads back what it did:** VM power, config and pending changes, tasks with real UPIDs, storage config and content, pools, the firewall, guest agent, consoles.
 - **Real errors, by name:** 2314 errors PVE can return, each raised with `pve.fail(..., error='name')`. See [Errors](errors.md).
 - **Faults on demand:** slow guests, locks, migrations, HA, lost quorum, offline nodes, flaky networks, Ceph, full storage, expired tickets, 403s. See [Scenarios](scenarios.md).
 - **Easy to run in CI:** a command line, a pytest-friendly class, a Dockerfile, and recipes for GitHub, Forgejo and Gitea, and GitLab. See [CI](ci.md).

@@ -1,0 +1,11 @@
+### Added
+
+- Storage keeps state. `POST /storage`, `PUT /storage/{storage}` (with `digest` and `delete`) and `DELETE /storage/{storage}` change the storage config that `GET /storage` and `GET /storage/{storage}` read back, with each storage type's own options (required, fixed and unexpected ones are refused in PVE's words, `content` is cut to what the type supports). The node's storage list and status follow it: `disable`, a `nodes` restriction, content types, `total`, `used` and `avail`, and `/cluster/resources` lists a storage only on the nodes it is enabled on.
+- Volumes: `POST .../content` allocates one (PVE's name and format rules, including `different storage formats` and `already exists`), `GET`, `PUT` and `DELETE .../content/{volume}` read it, set `notes` and `protected` (backups only, as on a directory storage) and remove it in an `imgdel` task. Disks that VM configs reference on a storage are listed with their owner and size. `download-url` and `upload` take `vztmpl` as well as `iso`, and refuse a storage that does not have the content type or is not file based.
+- Pools keep state: `POST`, `PUT` and `DELETE` on `/pools` and `/pools/{poolid}`, `GET /pools?poolid=` (and `type=`), members `vms` and `storage` with `delete` and `allow-move`, nested pools, PVE's refusals (`already a pool member`, `is not empty`, ...). Membership shows as `pool` in `/cluster/resources` and carries the grants made on `/pool/<id>` to guests and, now, storages.
+- Firewall keeps state at the cluster (`/cluster/firewall`), on a node and on a guest (`qemu` and `lxc` paths share the code): options with `digest` and `delete`, rules (new rules go on top and start disabled, `pos`, `moveto`, `digest`, `delete`, every rule field checked as `verify_rule` does), aliases, IP sets and their entries, security groups (create, rename, rules, delete), `refs` and `macros`.
+- `pve.firewall_config(scope, node=None, vmid=None)` returns the stored firewall config for tests that want to look at it.
+
+### Changed
+
+- `store_file` takes the content type (`iso` by default) and records the file as a volume. Storage status now reports `total`, `used` and `avail`, and `local` and `local-lvm` carry `path`, `vgname` and `thinpool` in their config.

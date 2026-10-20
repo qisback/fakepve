@@ -2,7 +2,7 @@
 
 Everything in fakepve is plain Python state you can read and set. This page explains every public attribute and method of `FakePve`, `FakeVm` and `FakeCt`, and the helper modules. The [signature index](#signature-index) at the end is generated from the code, so it is always complete; the explanations are written by hand, and a test checks that every public name in the index is explained here.
 
-Contents: [the fake](#the-fake) | [building the cluster](#building-the-cluster) | [VMs](#vms) | [containers](#containers) | [time and tasks](#time-and-tasks) | [scenarios](#scenario-methods) | [access](#access) | [failures and errors](#failures-and-errors) | [what the fake records](#what-the-fake-records) | [limits](#limits) | [storages](#storages) | [internals](#internals) | [helper modules](#helper-modules) | [signature index](#signature-index)
+Contents: [the fake](#the-fake) | [building the cluster](#building-the-cluster) | [VMs](#vms) | [containers](#containers) | [time and tasks](#time-and-tasks) | [scenarios](#scenario-methods) | [access](#access) | [failures and errors](#failures-and-errors) | [what the fake records](#what-the-fake-records) | [limits](#limits) | [storages](#storages) | [pools and firewall](#pools-and-the-firewall) | [internals](#internals) | [helper modules](#helper-modules) | [signature index](#signature-index)
 
 All durations are PVE seconds. The examples on this page run as they stand.
 
@@ -422,7 +422,7 @@ A request that is not logged in is answered 401 before anything else happens: it
 
 ## Storages
 
-`pve.storages` is a dict of storage name to a dict with `type`, `active` (1 or 0), `content`, `files` (a set of file names), optionally `shared`, `pool` (for RBD) and `avail` (bytes left). `local` (type `dir`, 50 GiB available) and `local-lvm` (type `lvmthin`) exist at the start. `pve.store_file(storage, name, size)` adds a file to a storage and reduces `avail`, or raises `TaskError` with `No space left on device` if it does not fit. `pve.file_size(path)` is `os.path.getsize`, handy for sizing an upload from a real file.
+`pve.storages` is a dict of storage name to a dict: the storage.cfg options as PVE returns them (`type`, `content`, `path`, `nodes`, `disable`, `shared`, `pool` for RBD, ...) plus the fake's own keys `active` (1 or 0), `files` (a set of ISO names), `volumes` (volume name to a dict with `content`, `format`, `size`, `vmid`, `notes`, `protected`) and `avail` (bytes left; without it the storage has 100 GiB). `local` (type `dir`, 50 GiB available) and `local-lvm` (type `lvmthin`) exist at the start. The storage API reads and writes this dict (see [Scenarios](scenarios.md#storage-pools-and-the-firewall)), so a test can also set it up directly. `pve.storage_config(name)` is the answer of `GET /storage/{name}`. `pve.store_file(storage, name, size, content='iso')` adds a file to a storage and reduces `avail`, or raises `TaskError` with `No space left on device` if it does not fit. `pve.file_size(path)` is `os.path.getsize`, handy for sizing an upload from a real file.
 
 <!-- run -->
 ```python
@@ -445,6 +445,10 @@ print(sorted(pve.storages), pve.storages['local-lvm']['type'])
 unable to write to storage 'local': No space left on device
 ['local', 'local-lvm'] lvmthin
 ```
+
+## Pools and the firewall
+
+`pve.pools` maps a pool id to the set of guest ids in it (a guest is in one pool, and `vm.pool` follows), and `pve.pool_info` maps it to `{'comment': ..., 'storage': {ids}}`. `add_vm(..., pool='lab')` creates the pool. The firewall config is kept inside the fake; `pve.firewall_config('cluster')`, `pve.firewall_config('host', node='pve1')` and `pve.firewall_config('vm', vmid=100)` return the stored dict (`options`, `rules`, `aliases`, `ipset`, `ipset_comments`, and for the cluster `groups` and `group_comments`) for a test that wants to set it up or inspect it. The rules in it are the dicts the API shows, without `pos` and `digest`.
 
 ## Internals
 
@@ -537,7 +541,7 @@ Constructor: `FakePve(user='root@pam', password='secret', host=None, port=8006)`
 | `fail(method, suffix, status=None, message=None, html=False, error=None, times=None)` | Answer requests whose path ends with suffix with an error. |
 | `errors_for(method, path, params=None)` | The errors a method can return at a concrete path: dicts with name, status, message, errors, in_task and source. Any of the names can be given to fail(error=...). |
 | `revoke_tickets()` | Forget every login ticket: the next request gets 401. |
-| `store_file(storage, name, size)` | Add a file to a storage, or raise TaskError if it does not fit in 'avail'. |
+| `store_file(storage, name, size, content='iso')` | Add a file (an ISO, by default) to a storage, or raise TaskError if it does not fit in 'avail'. |
 | `file_size(path)` | Size of a local file in bytes. |
 | `add_ct(*args, **kwargs)` | Add a FakeCt (arguments as FakeCt's) and its node; returns the container. |
 | `ct(vmid)` | The container with this id, or None. |
@@ -549,6 +553,15 @@ Constructor: `FakePve(user='root@pam', password='secret', host=None, port=8006)`
 | `async answer(request, match, params, user, call=None)` | The data for a request: checked against the schema, then call(match, values) or a value from `returns`. |
 | `check_permissions(user, perms, values)` | Raise a 403 PveError unless user satisfies the schema's permission rule. |
 | `async synthesise(match, method, info, user, values)` | The answer for a generic method: a task UPID, or a value built from its `returns`. |
+| `firewall_config(scope, node=None, vmid=None)` | The stored firewall config of 'cluster', a node ('host') or a guest ('vm' or 'ct'). |
+| `pool_of_vm(vmid)` | The pool a guest id is a member of, or None. |
+| `pool_of_storage(sid)` | The pool a storage id is a member of, or None. |
+| `storage_digest()` | The digest of storage.cfg: it changes with any storage option. |
+| `storage_config(name)` | The storage as GET /storage/{storage} shows it. |
+| `storage_enabled(name, node)` | PVE::Storage::storage_check_enabled: not disabled, and configured for the node. |
+| `storage_nodes(name)` | The nodes the storage is enabled on. |
+| `storage_resource(node, name)` | The /cluster/resources entry of a storage on a node, or None if it is not enabled there. |
+| `parse_volname(store, volname)` | (vtype, vmid or None, format) of a volume name, or PVE's die. |
 | `url` (property) | The address the fake listens on, https://host:port (the real port once started with port 0). |
 | `async start(certfile, keyfile)` | Listen on https://host:port with this certificate and key (PEM files). |
 | `async stop()` | Stop listening. |
@@ -578,6 +591,7 @@ Attributes after construction:
 | `apitokens` | `{}` |
 | `acl` | `None` |
 | `pools` | `{}` |
+| `pool_info` | `{}` |
 | `storages` | `{'local': {'type': 'dir', 'active': 1, 'content': 'iso,vztmpl,backup', 'files': set(), ...` |
 | `network` | `{'latency': 0.0, 'jitter': 0.0, 'node_latency': {}, 'drop_rate': 0.0, 'hang_rate': 0.0,...` |
 | `ceph` | `{'health': 'HEALTH_OK', 'slow': 0.0, 'down': False}` |
