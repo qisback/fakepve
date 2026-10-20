@@ -49,7 +49,8 @@ async def test_member_errors_and_moving(pve, api):
     await api.data('POST', '/pools', {'poolid': 'dev'})
     await api.data('POST', '/pools', {'poolid': 'ops'})
     await api.data('PUT', '/pools/dev', {'vms': '100'})
-    assert await error(api, 'PUT', '/pools/dev', {'vms': '100'}) == 'update pools failed: VM 100 is already a pool member'
+    assert await error(api, 'PUT', '/pools/dev', {'vms': '100'}) == \
+        'update pools failed: VM 100 is already a pool member'
     assert await error(api, 'PUT', '/pools/ops', {'vms': '100'}) == \
         "update pools failed: VM 100 belongs already to pool 'dev' and 'allow-move' is not set"
     assert await error(api, 'PUT', '/pools/ops', {'vms': '101', 'delete': 1}) == \
@@ -74,7 +75,8 @@ async def test_storage_members(pve, api):
     assert {r['storage']: r.get('pool') for r in resources} == {'local': 'dev', 'local-lvm': 'dev'}
     assert await error(api, 'PUT', '/pools/dev', {'storage': 'local'}) == \
         "update pools failed: Storage 'local' is already a pool member"
-    assert await error(api, 'DELETE', '/pools/dev') == "delete pool failed: pool 'dev' is not empty (contains storage 'local')"
+    assert await error(api, 'DELETE', '/pools/dev') == \
+        "delete pool failed: pool 'dev' is not empty (contains storage 'local')"
     await api.data('PUT', '/pools/dev', {'storage': 'local', 'delete': 1})
     assert await error(api, 'PUT', '/pools/dev', {'storage': 'local', 'delete': 1}) == \
         "update pools failed: Storage 'local' is not a pool member"

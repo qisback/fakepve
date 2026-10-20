@@ -191,7 +191,8 @@ async def test_aliases(api):
         'name': "alias 'OFFICE' already exists"}
     await api.data('POST', CL + '/rules', rule(source='office', dport='22'))
     assert (await api.data('GET', CL + '/rules/0'))['ipversion'] == 4
-    await api.data('PUT', CL + '/aliases/Office', {'cidr': '198.51.100.0/25', 'rename': 'HQ', 'digest': listed[0]['digest']})
+    await api.data('PUT', CL + '/aliases/Office', {'cidr': '198.51.100.0/25', 'rename': 'HQ',
+                                                   'digest': listed[0]['digest']})
     after = await api.data('GET', CL + '/aliases')
     assert [(a['name'], a['cidr'], 'comment' in a) for a in after] == [('HQ', '198.51.100.0/25', False)]
     assert await fails(api, 'PUT', CL + '/aliases/HQ', {'cidr': '192.0.2.1', 'digest': listed[0]['digest']}) == STALE
@@ -245,7 +246,7 @@ async def test_ipsets_and_their_entries(api):
     await api.data('POST', CL + '/ipset', {'name': 'ops', 'rename': 'trusted', 'digest': lst[0]['digest']})
     assert [s['name'] for s in await api.data('GET', CL + '/ipset')] == ['ops']
     assert await fails(api, 'GET', CL + '/ipset/trusted') == "no such IPSet 'trusted'"
-    assert await fails(api, 'POST', CL + '/ipset', {'name': 'x', 'rename': 'nope'}, status=400) == {
+    assert await fails(api, 'POST', CL + '/ipset', {'name': 'xx', 'rename': 'nope'}, status=400) == {
         'name': "IPSet 'nope' does not exist"}
     assert await api.data('DELETE', CL + '/ipset/ops', {'force': 1}) is None
     assert await api.data('GET', CL + '/ipset') == []
@@ -312,8 +313,8 @@ async def test_cluster_firewall_permissions(pve, api):
     pve.grant('ops@pve', '/', 'Sys.Audit')
     assert await ops.data('GET', CL + '/rules') == []
     for method, path, data in (('POST', CL + '/rules', rule()), ('PUT', CL + '/options', {'enable': 1}),
-                               ('POST', CL + '/aliases', {'name': 'a', 'cidr': '192.0.2.1'}),
-                               ('POST', CL + '/ipset', {'name': 'a'}), ('POST', CL + '/groups', {'group': 'g'})):
+                               ('POST', CL + '/aliases', {'name': 'aa', 'cidr': '192.0.2.1'}),
+                               ('POST', CL + '/ipset', {'name': 'aa'}), ('POST', CL + '/groups', {'group': 'gg'})):
         status, body = await ops.call(method, path, data)
         assert status == 403, (method, path, body)
         assert body['message'].strip() == 'Permission check failed (/, Sys.Modify)'

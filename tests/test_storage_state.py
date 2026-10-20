@@ -54,12 +54,14 @@ async def test_config_errors_in_pves_words(api):
         'path': 'property is not defined in schema and the schema does not allow additional properties'}
     assert await error(api, 'PUT', '/storage/one', {'delete': 'path'}) == \
         "update storage failed: unable to delete required option 'path'"
-    assert await error(api, 'PUT', '/storage/one', {'delete': 'bogus'}) == "update storage failed: no such option 'bogus'"
+    assert await error(api, 'PUT', '/storage/one', {'delete': 'bogus'}) == \
+        "update storage failed: no such option 'bogus'"
     assert await error(api, 'PUT', '/storage/one', {'shared': 1, 'delete': 'shared'}) == \
         "update storage failed: cannot set and delete property 'shared' at the same time!"
     assert await error(api, 'PUT', '/storage/one', {'shared': 1, 'digest': '0' * 40}) == \
         'update storage failed: detected modified configuration - file changed by other user? Try again.'
-    assert await error(api, 'PUT', '/storage/nope', {'shared': 1}) == "update storage failed: storage 'nope' does not exist"
+    assert await error(api, 'PUT', '/storage/nope', {'shared': 1}) == \
+        "update storage failed: storage 'nope' does not exist"
     assert await error(api, 'DELETE', '/storage/nope') == "delete storage failed: storage 'nope' does not exist"
 
 
@@ -191,7 +193,8 @@ async def test_volumes_referenced_by_vm_configs(pve, api):
     await make_store(api)
     pve.add_vm(101, 'vm2', config={'scsi0': 'vmstore:101/vm-101-disk-0.raw,size=2G', 'ide2': 'vmstore:iso/x.iso'})
     items = await api.data('GET', NODE + '/storage/vmstore/content?content=images')
-    assert [(i['volid'], i['vmid'], i['size']) for i in items] == [('vmstore:101/vm-101-disk-0.raw', 101, 2 * 1024 ** 3)]
+    assert [(i['volid'], i['vmid'], i['size']) for i in items] == [
+        ('vmstore:101/vm-101-disk-0.raw', 101, 2 * 1024 ** 3)]
     assert (await api.data('GET', NODE + '/storage/vmstore/status'))['used'] == 0
     assert (await api.data('GET', NODE + '/storage/vmstore/content/vmstore:101/vm-101-disk-0.raw'))['size'] == \
         2 * 1024 ** 3
@@ -248,7 +251,8 @@ async def test_content_permissions(pve, api):
     pve.grant('ops@pve', '/nodes', 'Sys.Audit')  # the first grant turns permission checks on
     base = NODE + '/storage/vmstore/content'
     status, body = await ops.call('POST', base, {'filename': 'a.raw', 'vmid': 100, 'size': '1M'})
-    assert status == 403 and body['message'].strip() == 'Permission check failed (/storage/vmstore, Datastore.AllocateSpace)'
+    assert status == 403
+    assert body['message'].strip() == 'Permission check failed (/storage/vmstore, Datastore.AllocateSpace)'
     pve.grant('ops@pve', '/storage/vmstore', 'Datastore.AllocateSpace', 'Datastore.Audit')
     volid = await ops.data('POST', base, {'filename': 'a.raw', 'vmid': 100, 'size': '1M'})
     # Owned images need VM.Config.Disk on the owner as well.
