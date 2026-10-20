@@ -554,14 +554,7 @@ Constructor: `FakePve(user='root@pam', password='secret', host=None, port=8006)`
 | `check_permissions(user, perms, values)` | Raise a 403 PveError unless user satisfies the schema's permission rule. |
 | `async synthesise(match, method, info, user, values)` | The answer for a generic method: a task UPID, or a value built from its `returns`. |
 | `firewall_config(scope, node=None, vmid=None)` | The stored firewall config of 'cluster', a node ('host') or a guest ('vm' or 'ct'). |
-| `pool_of_vm(vmid)` | The pool a guest id is a member of, or None. |
-| `pool_of_storage(sid)` | The pool a storage id is a member of, or None. |
-| `storage_digest()` | The digest of storage.cfg: it changes with any storage option. |
 | `storage_config(name)` | The storage as GET /storage/{storage} shows it. |
-| `storage_enabled(name, node)` | PVE::Storage::storage_check_enabled: not disabled, and configured for the node. |
-| `storage_nodes(name)` | The nodes the storage is enabled on. |
-| `storage_resource(node, name)` | The /cluster/resources entry of a storage on a node, or None if it is not enabled there. |
-| `parse_volname(store, volname)` | (vtype, vmid or None, format) of a volume name, or PVE's die. |
 | `url` (property) | The address the fake listens on, https://host:port (the real port once started with port 0). |
 | `async start(certfile, keyfile)` | Listen on https://host:port with this certificate and key (PEM files). |
 | `async stop()` | Stop listening. |

@@ -496,7 +496,13 @@ async with fake() as (pve, api):
 
 <!-- output -->
 ```text
-```
+200 {"data": {"storage": "vmstore", "type": "dir"}}
+{'storage': 'vmstore', 'type': 'dir', 'path': '/srv/vmstore', 'content': 'images,iso'}
+500 {"data": null, "message": "create storage failed: storage ID 'vmstore' already defined\n"}
+500 storage 'vmstore' is disabled
+vmstore:100/vm-100-disk-0.qcow2
+[('vmstore:100/vm-100-disk-0.qcow2', 4294967296)]
+4294967296
 
 A storage can be limited to some nodes (`nodes`), turned off (`disable`) or given other content types, and `/cluster/resources` and `/nodes/{node}/storage` follow. `type` decides which options are allowed and which are required: `lvm` needs `vgname`, `nfs` needs `server` and `export`, and an option the type does not have is `unexpected property`.
 
@@ -520,7 +526,11 @@ async with fake() as (pve, api):
 
 <!-- output -->
 ```text
-```
+[('qemu/100', 'qemu'), ('storage/pve1/local', 'storage')]
+dev
+500 {"data": null, "message": "update pools failed: VM 100 is already a pool member\n"}
+500 {"data": null, "message": "delete pool failed: pool 'dev' is not empty (contains VM 100)\n"}
+200 {"data": null}
 
 The firewall: rules are an ordered list, new rules go on top and start disabled, and `digest` guards against a second writer.
 
@@ -545,7 +555,12 @@ async with fake() as (pve, api):
 
 <!-- output -->
 ```text
-```
+[(0, '443', 'office', 4), (1, '22', 'office', 4)]
+200 {"data": null}
+500 {"data": null, "message": "detected modified configuration - file changed by other user? Try again.\n"}
+400 {"data": null, "message": "Parameter verification failed.\n", "errors": {"proto": "missing property - 'dport' requires this property"}}
+400 {"data": null, "message": "Parameter verification failed.\n", "errors": {"source": "no such ipset 'nosuchset'"}}
+['22', '443']
 
 A guest's firewall is kept by its id: the `qemu` and the `lxc` path of the same id read the same rules, and neither needs the guest to exist, as on PVE.
 
