@@ -4,6 +4,8 @@ All notable changes to fakepve are recorded here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-20
+
 First public release.
 
 ### Added
@@ -34,3 +36,6 @@ First public release.
 - Published to PyPI as `fakepve` (`pip install fakepve`; extras `crypto` and `pytest`), with trusted publishing, and to `ghcr.io/qisback/fakepve`. Python 3.10 and later.
 - The self-signed certificate names `localhost`, `127.0.0.1` and the address it is served on (subject alternative names), so a client can verify it with the certificate as its CA.
 - Licensed under the GNU Affero General Public License, version 3 or later.
+
+[Unreleased]: https://github.com/qisback/fakepve/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/qisback/fakepve/releases/tag/v0.1.0
