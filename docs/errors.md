@@ -13,7 +13,7 @@ Contents: [the catalogue](#the-catalogue) | [listing](#listing-errors) | [trigge
 | `name` | What you pass to `pve.fail(error=...)`. Made from the message text, unique within a method (a repeat gets `_2`). |
 | `status` | The HTTP status: 400, 403, 500, ... |
 | `message` | The message as a template, with `{placeholders}` for values only known at run time. |
-| `errors` | For a 400, the per-field errors (`{'vmid': 'value must have a minimum value of 100'}`). Absent otherwise. |
+| `errors` | For a 400, the per-field errors (`{'vmid': 'invalid format - value does not look like a valid VM ID\n'}`). Absent otherwise. |
 | `in_task` | `true` if PVE raises it inside a worker process, so it ends a task instead of failing the request. |
 | `source` | `repository/path:line` in the PVE sources, or `cross-cutting` for the ones added in code. |
 
@@ -133,7 +133,7 @@ PVE answers an error with the status code set, the first line of the message as 
 A 400 from parameter validation adds the per-field errors:
 
 ```json
-{"data": null, "message": "Parameter verification failed.\n", "errors": {"vmid": "value must have a minimum value of 100"}}
+{"data": null, "message": "Parameter verification failed.\n", "errors": {"vmid": "invalid format - value does not look like a valid VM ID\n"}}
 ```
 
 Messages carry PVE's trailing newline in the JSON, and none in the catalogue. PVE appends ` at /usr/share/perl5/... line N.` to a `die` without a newline; that is left out.
@@ -148,7 +148,7 @@ The catalogue is an approximation, because it reads the code and does not run it
 - `permission_denied` states the rule's first privilege, or `user != root@pam` for rules it cannot summarise, whatever the real rule is. The generic endpoints themselves evaluate the real rule when a user without the privilege calls them.
 - Names come from the message text and can change when the catalogue is regenerated for another PVE release. Pin the catalogue (it is a file in the package), or check `pve.errors_for` before relying on a name after updating.
 
-Known gaps in what the fake checks, from the schema: `/api2/extjs` is not served, property-string values (`format`) are not validated, and regular expressions that only Perl understands are not applied.
+Known gaps in what the fake checks, from the schema: some formats are accepted without checking ([formats](how-it-works.md#formats)), and regular expressions that only Perl understands are not applied.
 
 ## Regenerating the catalogue
 

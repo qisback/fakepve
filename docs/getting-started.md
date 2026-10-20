@@ -67,7 +67,7 @@ $ curl -sk -b "PVEAuthCookie=$TICKET" https://127.0.0.2:8006/api2/json/nodes/pve
 ```console
 $ curl -sk -b "PVEAuthCookie=$TICKET" -H "CSRFPreventionToken: $CSRF" -X POST \
     https://127.0.0.2:8006/api2/json/nodes/pve1/lxc/50/status/start
-{"data": null, "message": "Parameter verification failed.\n", "errors": {"vmid": "value must have a minimum value of 100"}}
+{"data": null, "message": "Parameter verification failed.\n", "errors": {"vmid": "invalid format - value does not look like a valid VM ID\n"}}
 ```
 
 That is a real PVE-style validation error: HTTP 400, `data` null, the message, and the per-field `errors`. Here is the whole sequence, with a VM read and the bad request:

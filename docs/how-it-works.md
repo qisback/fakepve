@@ -41,6 +41,16 @@ It stays one Python process on aiohttp. No PVE, QEMU, Ceph or corosync is run, a
    7. runs the handler, or, for a pending task failure, starts the task that fails.
 3. A `PveError` from anywhere becomes the response: the status, the first line of the message as the reason phrase, and `{"data": null, "message": "...\n"}` plus `errors` for a 400. Any other exception becomes `500 internal error`; it is logged by the `fakepve` logger, and the client sees no traceback.
 
+### The ExtJS format
+
+Every route is also served under `/api2/extjs`, with the same handlers, authentication and scenarios (`pve.fail`, network trouble, offline nodes). Only the envelope differs, as in PVE's web UI formatter: the HTTP status is always 200, the body has `data` and `success` (`1`, or `0` when there is an error or per-field `errors`), and for an error the status and message move into the body:
+
+```json
+{"data": null, "message": "Parameter verification failed.\n", "status": 400, "success": 0, "errors": {"vmid": "..."}}
+```
+
+`pve.requests` records the path as it was sent, so a test can tell the two formats apart. The `htmljs` form (file upload forms) and the other PVE formats are not served.
+
 ## Hand-written routes
 
 `FakePve._build_app` lists them. They are the paths whose answers depend on what happened before:
@@ -72,7 +82,19 @@ A method starts a task when it `returns` a string, is `protected`, and its descr
 
 ## Validation
 
-`schema.validate` checks, with PVE's wording: missing properties, properties the schema does not define (when it forbids extras), enums, types (booleans take 0/1, true/false, yes/no, on/off), minimum and maximum, string length and patterns, `requires` dependencies, and array item counts. Not checked: `format` property strings, and regular expressions that only Perl understands (they are skipped). Values come from the query string, a form body or a JSON body.
+`schema.validate` checks, with PVE's wording: missing properties, properties the schema does not define (when it forbids extras), enums, types (booleans take 0/1, true/false, yes/no, on/off), minimum and maximum, string length and patterns, `requires` dependencies, and array item counts, and the `format` of a parameter ([formats](#formats)). Regular expressions that only Perl understands are skipped. Values come from the query string, a form body or a JSON body.
+
+### Formats
+
+A parameter with a `format` is checked the way `PVE::JSONSchema` checks it: after the type, before the pattern, the length limits, the range and the enumeration. A failure reads `invalid format - <PVE's message>` with PVE's trailing newline, under the parameter's name. Any name may carry PVE's `-list` suffix (items separated by commas, semicolons or white space, or NUL) or `-opt` (an empty value passes). Matching is linear, and a value over 4096 characters is refused before any check (PVE has no such limit).
+
+**Property strings** (`net0=virtio,bridge=vmbr0`) are parsed as PVE parses them: `key=value` pairs, a bare first value for the `default_key`, aliases (`virtio=BC:24:11:00:00:01` sets `model` and `macaddr`), booleans as `1`/`0`/`yes`/`no`/`on`/`off`/`true`/`false`. Each key is checked against its sub-schema, so a bad value, a missing required key, a key whose `requires` partner is missing and an unknown key are all reported. A syntax problem is a single message (`invalid key in comma-separated list property: bogus`); the other problems come as `format error` followed by one `param.key: message` line each. Numbered parameters (`net0`, `scsi3`, `ipconfig1`, `mp5`) use the schema of their pattern (`net[n]`, ...) within the limits PVE sets (`net` and `ipconfig` up to 31, `ide` 3, `sata` 5, `scsi` 30, `virtio` 15, `unused` and `mp` 255, and so on); a number past the limit is not a parameter of the method. The schema spells most property strings out inline; for the ones it only names, fakepve carries PVE's sub-schemas: `pve-qm-ipconfig`, `pve-qm-boot`, `pve-qm-rng`, `pve-qm-watchdog`, and `pve-qm-ide` (the `cdrom` drive, taken from `ide[n]`).
+
+**Named formats checked** (42): `CIDR`, `CIDRv4`, `CIDRv6`, `IPorCIDR`, `IPorCIDRorAlias`, `address`, `disk-size`, `dns-name`, `email`, `email-or-username`, `ip`, `ipv4`, `ipv4mask`, `ipv6`, `ldap-simple-attr`, `mac-addr`, `pve-bridge-id`, `pve-configid`, `pve-fw-comment-spec`, `pve-groupid`, `pve-hotplug-features`, `pve-iface`, `pve-ipv4-config`, `pve-ipv6-config`, `pve-node`, `pve-poolid`, `pve-realm`, `pve-roleid`, `pve-startup-order`, `pve-storage-content`, `pve-storage-id`, `pve-storage-path`, `pve-storage-server`, `pve-tag`, `pve-tokenid`, `pve-userid`, `pve-vlan-id-or-range`, `pve-vmid`, `pve-volume-id`, `pve-volume-id-or-absolute-path`, `pve-volume-id-or-qm-path`, `urlencoded`.
+
+**Named formats accepted without checking** (57): `FullRangeCIDR`, `backup-fleecing`, `backup-performance`, `bridge-pair`, `graphite-path`, `lxc-ip-with-ll-iface`, `mac-prefix`, `pem-certificate-chain`, `pem-string`, `proxmox-remote`, `prune-backups`, `pve-acme-alias`, `pve-acme-domain`, `pve-calendar-event`, `pve-command-batch`, `pve-cpuset`, `pve-ct-timezone`, `pve-day-of-week`, `pve-dir-override`, `pve-fw-addr-spec`, `pve-fw-conntrack-helper`, `pve-fw-dport-spec`, `pve-fw-icmp-type-spec`, `pve-fw-protocol-spec`, `pve-fw-sport-spec`, `pve-ha-node`, `pve-ha-resource-or-vm-id`, `pve-lxc-dev-string`, `pve-lxc-mp-string`, `pve-node-location`, `pve-phys-bits`, `pve-priv`, `pve-qemu-sev-fmt`, `pve-qemu-tdx-fmt`, `pve-qm-bootdisk`, `pve-qm-cicustom`, `pve-qm-hostpci`, `pve-qm-smbios1`, `pve-replication-job-id`, `pve-sdn-bgp-rt`, `pve-sdn-dhcp-range`, `pve-sdn-fabric-id`, `pve-sdn-fabric-wireguard-interface`, `pve-sdn-isis-net`, `pve-sdn-prefix-list-id`, `pve-sdn-route-map-id`, `pve-sdn-subnet-id`, `pve-storage-options`, `pve-storage-path-in-property-string`, `pve-storage-portal-dns`, `pve-storage-vgname`, `pve-storage-zfs-blocksize`, `pve-task-status-type`, `pve-tfa-config`, `pve-vm-cpu-conf`, `realm-sync-options`, `storage-pair`. A value for one of these is only checked for its type, pattern and length. Their rules need the rest of PVE (storage and network configuration, the firewall rule language, calendar events, CPU models), or are property strings that the schema only names. The `IPorCIDR` formats answer one message for every failure, where PVE passes on the text of its IP library.
+
+`PUT` and `POST` on a VM's `config` run the same checks, so `PUT config` with `net0=virtio,bogus=1` or `delete=0bad` is a 400, as on PVE.
 
 ## Permissions
 
@@ -108,8 +130,7 @@ Stated plainly, so nobody has to find them by surprise:
 - **Containers are not modelled.** The `lxc` endpoints validate and answer from the schema, but there are no containers to start, stop or list.
 - **Guest agent commands are shapes, not behaviour.** `ping`, `get-osinfo` and `network-get-interfaces` read `vm.agent`, and `fsfreeze-*` keep a frozen flag. The rest answer plausible values, and `exec`, `exec-status`, `file-read` and `file-write` only record the request: nothing runs and no file is touched. `shutdown` and `suspend-*` do not change the VM.
 - **Two-factor logins stop at `NeedTFA`.** There is no second step to complete.
-- **`/api2/extjs` is not served**, only `/api2/json`.
-- **Property strings are not validated** (`format` schemas such as `virtio=...,bridge=...`), nor are regular expressions that only Perl understands.
+- **Some formats are accepted without checking.** Property strings and the common named formats are validated ([formats](#formats)); the rest are listed there, and so are regular expressions that only Perl understands.
 - **Generic tasks have a simple type.** A task started by a generic method is named after the last path segment (`start`, `vmid`), not PVE's (`qmstart`, `qmdestroy`). Tasks of the hand-written routes and of failures by name use PVE's names.
 - **Ceph changes are detected on existing disks.** `ceph_down` fails a config change to a disk that is already on RBD; adding a new RBD disk to a VM goes through.
 - **`pve.latency` does nothing.** Use `slow_network()`.
@@ -127,6 +148,8 @@ Stated plainly, so nobody has to find them by surprise:
 Both are derived from Proxmox VE, which is AGPL-3.0, and are distributed under the same terms (see the licence section of the README).
 
 ## Refreshing the schema and the catalogue
+
+A weekly GitHub workflow (`.github/workflows/schema-check.yml`) runs `python tools/check_schema.py`, which hashes the online `apidoc.js` and compares it with the `sha256` in `pve-api.meta.json` (exit 0 same, 1 changed, 2 unreadable). When it differs, the workflow opens an issue, once per new hash. You can run the tool by hand.
 
 For a new PVE release:
 
