@@ -274,6 +274,10 @@ def parse_ports(text, icmp_type_ok):
         raise ValueError('too many entries in port list (> 15 numbers)')
 
 
+# The prefix of an error from a property's registered format, which the API checks as it parses the request.
+FORMAT = 'invalid format - '
+
+
 def verify_protocol(proto):
     if proto not in PROTOCOLS and proto != 'icmpv6' and not (proto.isdigit() and int(proto) in PROTOCOLS.values()):
         raise ValueError("unknown protocol '{0}'".format(proto))
@@ -349,14 +353,14 @@ def verify_rule(rule, cluster, conf, env):
         try:
             verify_protocol(proto)
         except ValueError as e:
-            raise err('proto', str(e)) from None
+            raise err('proto', FORMAT + str(e)) from None
         set_version({'icmp': 4, 'icmpv6': 6, 'ipv6-icmp': 6}.get(proto))
         is_icmp = proto in ('icmp', 'icmpv6', 'ipv6-icmp', '1', '58')
     if rule.get('dport'):
         try:
             parse_ports(rule['dport'], is_icmp)
         except ValueError as e:
-            raise err('dport', str(e)) from None
+            raise err('dport', FORMAT + str(e)) from None
         if not proto:
             raise err('proto', "missing property - 'dport' requires this property")
         if proto not in PORT_PROTOCOLS and not is_icmp:
@@ -375,7 +379,7 @@ def verify_rule(rule, cluster, conf, env):
         try:
             parse_ports(rule['sport'], False)
         except ValueError as e:
-            raise err('sport', str(e)) from None
+            raise err('sport', FORMAT + str(e)) from None
         if not proto:
             raise err('proto', "missing property - 'sport' requires this property")
         if proto not in PORT_PROTOCOLS:
@@ -385,7 +389,7 @@ def verify_rule(rule, cluster, conf, env):
             try:
                 set_version(parse_address_list(rule[name]))
             except ValueError as e:
-                raise err(name, str(e)) from None
+                raise err(name, FORMAT + str(e)) from None
             check_reference(name)
     if version:
         rule['ipversion'] = version
@@ -542,9 +546,22 @@ class FirewallApi(StatefulRoutes):
             rule['enable'] = 0
         rules.insert(0, rule)
 
+    @staticmethod
+    def _no_rules_file(scope, conf):
+        """PVE parses a missing or empty .fw file to `{}`: its `rules` is undef, which update and delete dereference."""
+        if scope == 'group':
+            return False
+        return not any(conf[key] for key in ('rules', 'options', 'aliases', 'ipset', 'groups') if key in conf)
+
+    def _need_rules(self, scope, conf):
+        if self._no_rules_file(scope, conf):
+            raise die("Can't use an undefined value as an ARRAY reference at "
+                      "/usr/share/perl5/PVE/API2/Firewall/Rules.pm line 462.")
+
     async def _fw_rule_update(self, scope, v, user):
         conf, rules = self._rules_of(scope, v)
         check_digest(copy_list_with_digest(rules)[1], v.get('digest'))
+        self._need_rules(scope, conf)
         pos = v['pos']
         if pos >= len(rules):
             raise die('no rule at position {0}'.format(pos))
@@ -577,6 +594,7 @@ class FirewallApi(StatefulRoutes):
     async def _fw_rule_delete(self, scope, v, user):
         conf, rules = self._rules_of(scope, v)
         check_digest(copy_list_with_digest(rules)[1], v.get('digest'))
+        self._need_rules(scope, conf)
         if v['pos'] >= len(rules):
             raise die('no rule at position {0}'.format(v['pos']))
         del rules[v['pos']]

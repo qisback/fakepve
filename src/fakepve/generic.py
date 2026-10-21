@@ -6,6 +6,7 @@ with a value built from the method's `returns`. Methods that start a worker
 task return a real UPID. Nothing is stored.
 """
 
+import re
 import urllib.parse
 
 from aiohttp import web
@@ -54,6 +55,7 @@ class GenericApi(object):
             raise PveError(501, "Method '{0} {1}' not implemented".format(method, request.path))
         values = dict(params)
         declared = (info.get('parameters') or {}).get('properties', {})
+        self._check_acl_path(user, info.get('permissions'), dict(params, **match.params))
         # A few path parameters are missing from the schema; they are not checked.
         values.update((k, v) for k, v in match.params.items() if k in declared)
         values, errors = pve_schema.validate(info.get('parameters'), values)
@@ -69,6 +71,21 @@ class GenericApi(object):
         return await self.synthesise(match, method, info, user, values)
 
     # ---------------------------------------------------------- permissions
+
+    @staticmethod
+    def _check_acl_path(user, perms, values):
+        """PVE checks permissions before the parameters: a path it cannot normalise (a name with a space) has
+        no privileges for anyone but the root@pam login, and the error shows an empty path."""
+        rule = (perms or {}).get('check')
+        if user in (None, 'root@pam') or not rule or rule[0] != 'perm':
+            return
+        path = rule[1]
+        for name in set(GenericApi._names(path)):
+            if values.get(name) is None:
+                return
+            path = path.replace('{' + name + '}', str(values[name]))
+        if not re.fullmatch(r'[A-Za-z0-9./_-]+', path):
+            raise PveError(403, 'Permission check failed (, {0})'.format('|'.join(rule[2])))
 
     def check_permissions(self, user, perms, values, declared=None):
         """Raise a 403 PveError unless user satisfies the schema's permission rule."""

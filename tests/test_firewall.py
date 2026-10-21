@@ -124,22 +124,26 @@ async def test_delete_and_missing_positions(api):
         assert await fails(api, method, CL + '/rules/5') == 'no rule at position 5'
 
 
+# A property with a registered format fails in the schema check, with its prefix.
+F = 'invalid format - '
+
+
 @pytest.mark.parametrize('extra,field,message', [
     ({'proto': None, 'dport': '80'}, 'proto', "missing property - 'dport' requires this property"),
-    ({'dport': '99999'}, 'dport', "invalid port '99999'"),
-    ({'dport': '90:80'}, 'dport', "backwards range '90:80' not allowed, did you mean '80:90'?"),
-    ({'dport': 'nosuchservice'}, 'dport', "invalid port 'nosuchservice'"),
-    ({'dport': '80,81,'}, 'dport', 'extraneous commas in list'),
-    ({'dport': '80,,81'}, 'dport', "invalid port ''"),
-    ({'proto': 'icmp', 'dport': '80,echo-request'}, 'dport', 'ICMP ports not allowed in port range'),
+    ({'dport': '99999'}, 'dport', F + "invalid port '99999'"),
+    ({'dport': '90:80'}, 'dport', F + "backwards range '90:80' not allowed, did you mean '80:90'?"),
+    ({'dport': 'nosuchservice'}, 'dport', F + "invalid port 'nosuchservice'"),
+    ({'dport': '80,81,'}, 'dport', F + 'extraneous commas in list'),
+    ({'dport': '80,,81'}, 'dport', F + "invalid port ''"),
+    ({'proto': 'icmp', 'dport': '80,echo-request'}, 'dport', F + 'ICMP ports not allowed in port range'),
     ({'proto': 'icmp', 'icmp-type': 'bogus'}, 'icmp-type', "invalid icmp-type 'bogus' for proto 'icmp'"),
     ({'proto': 'ospf', 'dport': '80'}, 'dport', "protocol 'ospf' does not support ports"),
-    ({'proto': 'nosuch'}, 'proto', "unknown protocol 'nosuch'"),
-    ({'sport': '70000'}, 'sport', "invalid port '70000'"),
+    ({'proto': 'nosuch'}, 'proto', F + "unknown protocol 'nosuch'"),
+    ({'sport': '70000'}, 'sport', F + "invalid port '70000'"),
     ({'source': '192.0.2.1,2001:db8::1'}, 'source',
-     "detected mixed ipv4/ipv6 addresses in address list '192.0.2.1,2001:db8::1'"),
-    ({'source': '192.0.2.1-192.0.2.9,192.0.2.20'}, 'source', "you can't use a range in a list"),
-    ({'source': '192.0.2.300'}, 'source', 'not a valid IP or CIDR: 192.0.2.300'),
+     F + "detected mixed ipv4/ipv6 addresses in address list '192.0.2.1,2001:db8::1'"),
+    ({'source': '192.0.2.1-192.0.2.9,192.0.2.20'}, 'source', F + "you can't use a range in a list"),
+    ({'source': '192.0.2.300'}, 'source', F + 'not a valid IP or CIDR: 192.0.2.300'),
     ({'dest': '+nosuch'}, 'dest', "no such ipset 'nosuch'"),
     ({'source': 'nosuch'}, 'source', "no such alias 'nosuch'"),
     ({'macro': 'nosuch', 'proto': None}, 'macro', "unknown macro 'nosuch'"),
@@ -336,3 +340,20 @@ async def test_node_and_guest_firewall_permissions(pve, api):
     assert (await ops.call('PUT', QEMU + '/options', {'enable': 1}))[0] == 200
     status, body = await ops.call('GET', '/nodes/pve1/qemu/101/firewall/rules')
     assert status == 403 and body['message'].strip() == 'Permission check failed (/vms/101, VM.Audit)'
+
+
+async def test_update_and_delete_of_a_rule_without_a_rules_file_hit_a_perl_error(pve, api):
+    # A missing or empty .fw file parses to {}: `rules` is undef, and pos >= scalar(@$rules) dies.
+    perl = "Can't use an undefined value as an ARRAY reference at /usr/share/perl5/PVE/API2/Firewall/Rules.pm line 462."
+    for base in (QEMU, CL):
+        assert await fails(api, 'DELETE', base + '/rules/7') == perl
+        assert await fails(api, 'PUT', base + '/rules/0', {'enable': 0}) == perl
+        # The read has a copy to work with, so it keeps the plain message.
+        assert await fails(api, 'GET', base + '/rules/0') == 'no rule at position 0'
+    await api.data('POST', QEMU + '/rules', rule())
+    assert await fails(api, 'DELETE', QEMU + '/rules/7') == 'no rule at position 7'
+    await api.data('DELETE', QEMU + '/rules/0')
+    assert await fails(api, 'DELETE', QEMU + '/rules/0') == perl
+    # Options make a file: an empty rule list is then a list.
+    await api.data('PUT', QEMU + '/options', {'enable': 1})
+    assert await fails(api, 'DELETE', QEMU + '/rules/0') == 'no rule at position 0'

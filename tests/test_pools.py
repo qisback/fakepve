@@ -125,3 +125,27 @@ async def test_pool_permissions(pve, api):
     assert (await ops.call('DELETE', '/pools/dev'))[0] == 500
     status, body = await ops.call('GET', '/pools/other')
     assert status == 403 and body['message'].strip() == 'Permission check failed (/pool/other, Pool.Audit)'
+
+
+async def test_a_name_with_a_space_has_no_acl_path(pve, api):
+    # PVE checks permissions first, and a path it cannot normalise gives nobody (but root@pam) a privilege:
+    # the 403 shows an empty path. The root login reaches the format check and gets the 400.
+    ops = await ops_client(pve, api)
+    status, body = await ops.call('POST', '/pools', {'poolid': 'bad name'})
+    assert status == 403 and body['message'].strip() == 'Permission check failed (, Pool.Allocate)'
+    status, body = await api.call('POST', '/pools', {'poolid': 'bad name'})
+    assert status == 400 and 'poolid' in body['errors']
+    assert await ops.data('GET', '/pools') == []
+
+
+async def test_a_pool_of_vms_made_through_the_api(pve, api):
+    await api.data('POST', '/pools', {'poolid': 'dev'})
+    upid = await api.data('POST', '/nodes/pve1/qemu', {'vmid': 100, 'name': 'vm1', 'pool': 'dev'})
+    assert pve.tasks[upid]['exitstatus'] == 'OK'
+    assert pve.pools['dev'] == {100}
+    assert await error(api, 'DELETE', '/pools/dev') == "delete pool failed: pool 'dev' is not empty (contains VM 100)"
+    await api.data('PUT', '/pools/dev', {'vms': '100', 'delete': 1})
+    assert await error(api, 'PUT', '/pools/dev', {'vms': '100', 'delete': 1}) == \
+        'update pools failed: VM 100 is not a pool member'
+    assert await api.data('DELETE', '/pools/dev') is None
+    assert pve.vm(100).pool is None
