@@ -326,6 +326,36 @@ async def test_the_container_steps_are_skipped_with_a_note_without_a_template(to
     tool.check_scenario(doc, vocab)
 
 
+async def test_a_recording_without_a_template_is_diffed_against_a_fake_without_one(tool, vocab, tmp_path):
+    # The recording skipped the container steps; the fake must skip the same ones, not run them.
+    doc = await tool.scenario_on_fake(vocab, template=False)
+    assert doc['notes'] == ['no-template']
+    recording = tmp_path / 'scenario.json'
+    recording.write_text(tool.dump_scenario(doc, vocab, [tool.Fake.TOKEN, tool.Fake.SECRET], ['pve1']))
+    code, text = await run(tool, ['scenario', '--against-fake', str(recording)])
+    assert code == 0 and ' 0 with a difference' in text and 'skipped on one side only' not in text
+    with_template = json.loads(tool.dump_scenario(await tool.scenario_on_fake(vocab), vocab))
+    assert 'notes' in with_template and with_template['notes'] == []
+
+
+async def test_the_vm_chain_answers_as_qemu_server_does(tool, vocab):
+    steps = dict((s['step'], s) for s in (await tool.scenario_on_fake(vocab))['steps'])
+    for name, status in (('vm-create', 200), ('vm-create-again', 500), ('vm-create-bad-vmid', 400),
+                         ('vm-config-get', 200), ('vm-config-get-missing', 500), ('vm-config-put', 200),
+                         ('vm-config-put-digest', 500), ('vm-start-again', 200), ('vm-clone-id-in-use', 500),
+                         ('vm-template-again', 500), ('vm-destroy-protected', 500), ('vm-destroy-running', 500),
+                         ('vm-destroy-again', 500), ('pool-create-bad-name', 403), ('pool-delete-not-empty', 500),
+                         ('fw-rule-add-bad-port', 400), ('fw-rule-delete-missing', 500)):
+        assert steps[name]['status'] == status, name
+    assert steps['vm-start-again']['task']['exitstatus'] == 'VM <x> already running'
+    assert steps['vm-template-start']['task']['exitstatus'] == "you can't start a vm if it's a template"
+    assert steps['vm-snapshot-reuse']['task']['exitstatus'] == "snapshot name '<x>' already used"
+    assert steps['vm-snapshot-delete-missing']['task']['exitstatus'] == "snapshot '<x>' does not exist"
+    assert steps['vm-config-put-digest']['error'] == 'checksum mismatch (file change by other user?)'
+    assert steps['fw-rule-add-bad-port']['errors']['dport'].startswith('invalid format - invalid port')
+    assert steps['ct-create']['status'] == 200 and steps['ct-destroy']['task']['exitstatus'] == 'OK'
+
+
 async def test_the_diff_counts_status_error_keys_and_task_differences(tool, vocab):
     doc = await tool.scenario_on_fake(vocab)
     other = json.loads(json.dumps(doc))

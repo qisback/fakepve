@@ -1337,8 +1337,11 @@ def load_scenario(path):
 
 # ------------------------------------------------------ scenario against a fake
 
-def scenario_fake():
-    """A Fake whose node serves the appliance index (one Alpine template), which the generic answer lacks."""
+def scenario_fake(template=True):
+    """A Fake whose node serves the appliance index (one Alpine template), which the generic answer lacks.
+
+    Without `template` the index is empty (null), as on a node that cannot reach the appliance servers: the
+    container steps are then skipped, as in a recording made there."""
     from fakepve import FakePve
 
     class ApplianceFake(FakePve):
@@ -1349,6 +1352,8 @@ def scenario_fake():
             return [('GET', path, self._apl_list), ('POST', path, self._apl_download)]
 
         async def _apl_list(self, _values, _user):
+            if not template:
+                return None
             return [{'template': self.TEMPLATE, 'package': 'alpine-3.20-default', 'type': 'lxc', 'section': 'system',
                      'os': 'alpine-3.20', 'headline': 'Alpine Linux', 'version': '3.20',
                      'description': 'Example appliance.', 'infopage': 'https://example.org/', 'location': 'x'}]
@@ -1368,10 +1373,10 @@ def scenario_fake():
     return ScenarioFake({'node': 1})
 
 
-async def scenario_on_fake(vocab=None, steps=None, groups=None, scenario=Scenario):
+async def scenario_on_fake(vocab=None, steps=None, groups=None, scenario=Scenario, template=True):
     """The scenario against a fresh in-process fake; the file's document."""
     vocab = vocab or Vocab(fschema.load())
-    async with scenario_fake() as fake:
+    async with scenario_fake(template) as fake:
         node = sorted(fake.pve.nodes)[0]
         async with WriteClient(fake.pve.url, fake.token, node, tls=False) as client:
             return await scenario(client, node, vocab, steps, groups, poll=0.01).run()
@@ -1552,7 +1557,9 @@ async def scenario_main(args, write):
     vocab = Vocab(fschema.load())
     if isinstance(args.against_fake, str):
         real = load_scenario(args.against_fake)
-        fake = json.loads(dump_scenario(await scenario_on_fake(vocab, groups=groups), vocab, [Fake.TOKEN, Fake.SECRET]))
+        # A recording made without a template skipped the container steps: the fake has none either.
+        doc = await scenario_on_fake(vocab, groups=groups, template='no-template' not in real['notes'])
+        fake = json.loads(dump_scenario(doc, vocab, [Fake.TOKEN, Fake.SECRET]))
         return 1 if report_scenario(real, fake, diff_scenarios(real, fake), write) else 0
     if not (args.url and args.token_file):
         raise ToolError('scenario needs --url and --token-file, or --against-fake FILE')
