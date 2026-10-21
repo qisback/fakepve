@@ -4,6 +4,8 @@ All notable changes to fakepve are recorded here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-21
+
 ### Added
 
 - `tools/compare_real.py scenario` (phase 2 of the comparison with a real PVE) compares write operations and error responses. It runs a list of steps (storage, VM and container lifecycle with bad values, digests, snapshots, clones, templates, protection, pools and firewall rules) against a throwaway PVE 9 node, and records per step the HTTP status, the shape of the answer, the error text with every name and number removed, the keys of the per-field `errors` and the exit status and last log line of the task. It only touches objects it creates (vmids 9900-9999, names `fpcmp-*`, storage `fpcmp-dir`, pool `fpcmp-pool`), cleans up in a `finally` and verifies it, and refuses to start without `--i-understand-this-writes` and `--disposable-node` naming the only node of a target that holds no other guest. `--against-fake` runs the same list on an in-process fakepve and diffs step by step (exact and fuzzy text matches, status, error keys, task outcome); `--self-test-scenario` runs it on two fakes and expects no difference.
@@ -105,7 +107,8 @@ First public release.
 - The self-signed certificate names `localhost`, `127.0.0.1` and the address it is served on (subject alternative names), so a client can verify it with the certificate as its CA.
 - Licensed under the GNU Affero General Public License, version 3 or later.
 
-[Unreleased]: https://github.com/qisback/fakepve/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/qisback/fakepve/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/qisback/fakepve/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/qisback/fakepve/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/qisback/fakepve/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/qisback/fakepve/compare/v0.1.0...v0.2.0
