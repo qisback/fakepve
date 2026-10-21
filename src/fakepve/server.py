@@ -36,6 +36,7 @@ from .generic import GenericApi
 from .lxc import SIZE_UNITS, FakeCt, LxcApi
 from .model import DRIVE_PREFIXES, FakeVm, Model, PveError, TaskError
 from .pools import PoolsApi
+from .qemu import QemuApi
 from .storage import StorageApi, StorageTransfer
 
 PORT = 8006  # PVE's API port; clients often assume it
@@ -153,7 +154,7 @@ class BodyTimeout(Exception):
     """The client stopped sending its request body."""
 
 
-class FakePve(StorageTransfer, StorageApi, PoolsApi, FirewallApi, GenericApi, LxcApi, Model):
+class FakePve(StorageTransfer, StorageApi, PoolsApi, FirewallApi, GenericApi, LxcApi, QemuApi, Model):
     def __init__(self, user='root@pam', password='secret', host=None, port=PORT):
         super().__init__(user, password)
         self.host = host or next_loopback()
@@ -709,15 +710,17 @@ class FakePve(StorageTransfer, StorageApi, PoolsApi, FirewallApi, GenericApi, Lx
                                log=['Requesting HA {0} for VM {1}'.format(verb, vm.vmid)])
 
     async def _do_start(self, vm, user, p):
-        if vm.template:
-            raise PveError(500, "you can't start a vm if it's a template")
-        if vm.status == 'running':
-            raise PveError(500, 'VM {0} already running'.format(vm.vmid))
-        self._check_lock(vm, allow=('suspended',))
-        if vm.ha_managed:
+        if vm.ha_managed and not vm.template:
             return await self._ha_request(vm, user, 'started')
 
         async def body():
+            # PVE::QemuServer::vm_start checks inside the worker: these are task errors, not HTTP ones.
+            if vm.template:
+                raise TaskError("you can't start a vm if it's a template")
+            if vm.lock and vm.lock != 'suspended':
+                raise TaskError('VM is locked ({0})'.format(vm.lock))
+            if vm.status == 'running':
+                raise TaskError('VM {0} already running'.format(vm.vmid))
             await self.ceph_io(vm)
             await self.pause(vm.start_secs)
             if vm.start_error:
@@ -851,7 +854,7 @@ class FakePve(StorageTransfer, StorageApi, PoolsApi, FirewallApi, GenericApi, Lx
         updates = dict(p)
         digest = updates.pop('digest', None)
         if digest and digest != vm.digest():
-            raise PveError(500, 'detected modified configuration - file changed by other user? Try again.')
+            raise PveError(500, 'checksum mismatch (file change by other user?)')
         deletes = [k for k in str(updates.pop('delete', '') or '').split(',') if k]
         updates.pop('skiplock', None)
         for key in list(updates) + deletes:
@@ -900,19 +903,20 @@ class FakePve(StorageTransfer, StorageApi, PoolsApi, FirewallApi, GenericApi, Lx
                     vm.pending.pop(key, None)
         finally:
             self.release(vm, 'config')
+        vm.name = vm.config.get('name') or 'VM {0}'.format(vm.vmid)
 
     async def _config_put(self, request):
-        vm = self._vm(request)
         p = await params(request)
         self._verify(request, p)
+        vm = self._vm(request)
         await self._apply_config(vm, request[USER], p)
         return ok()
 
     async def _config_post(self, request):
         # The asynchronous form: a qmconfig task.
-        vm = self._vm(request)
         p = await params(request)
         self._verify(request, p)
+        vm = self._vm(request)
         user = request[USER]
         self.need_quorum()
 

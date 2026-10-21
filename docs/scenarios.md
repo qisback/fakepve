@@ -165,7 +165,7 @@ stopped volume 'local-lvm:vm-100-disk-0' does not exist
 stopped
 ```
 
-Asking for something the VM's state does not allow is refused up front, with PVE's wording:
+Asking for something the VM's state does not allow gets PVE's wording. A start is checked inside the worker, as `qm start` does it, so a start of a running VM or a template is a task that ends with the message. A shutdown of a stopped VM is refused at once.
 
 <!-- run -->
 ```python
@@ -173,17 +173,18 @@ async with fake() as (pve, api):
     pve.add_vm(100, 'web1', status='running')
     pve.add_vm(101, 'web2')
     pve.add_vm(9000, 'tmpl', template=True)
-    show(await api.call('POST', '/nodes/pve1/qemu/100/status/start'))
+    for vmid in (100, 9000):
+        _, body = await api.call('POST', '/nodes/pve1/qemu/{0}/status/start'.format(vmid))
+        print((await api.wait(body['data']))['exitstatus'])
     show(await api.call('POST', '/nodes/pve1/qemu/101/status/shutdown'))
-    show(await api.call('POST', '/nodes/pve1/qemu/9000/status/start'))
     show(await api.call('POST', '/nodes/pve1/qemu/100/status/nonsense'))
 ```
 
 <!-- output -->
 ```text
-500 {"data": null, "message": "VM 100 already running\n"}
+VM 100 already running
+you can't start a vm if it's a template
 500 {"data": null, "message": "VM 101 not running\n"}
-500 {"data": null, "message": "you can't start a vm if it's a template\n"}
 501 {"data": null, "message": "Method 'POST /nodes/pve1/qemu/100/status/nonsense' not implemented\n"}
 ```
 
@@ -727,7 +728,7 @@ PVE's real errors are catalogued per method. `pve.errors_for(method, path)` list
 <!-- run -->
 ```python
 async with fake() as (pve, api):
-    pve.add_vm(100, 'web1', status='running')
+    pve.add_vm(100, 'web1')
     path = '/nodes/pve1/qemu/100'
     names = [e['name'] for e in pve.errors_for('DELETE', path)]
     print('running_destroy_failed' in names, 'no_quorum' in names)

@@ -4,8 +4,8 @@
 
 Every path and method of the PVE API schema that fakepve answers, under `/api2/json`: 680 methods on 449 paths.
 
-- **stateful (hand-written)**: 179 methods keep state and follow PVE's rules (see [How it works](../how-it-works.md)).
-- **generic (from the schema)**: 501 methods check parameters and permissions as the schema states them and answer with a value of the right shape. A write succeeds and changes nothing.
+- **stateful (hand-written)**: 189 methods keep state and follow PVE's rules (see [How it works](../how-it-works.md)).
+- **generic (from the schema)**: 491 methods check parameters and permissions as the schema states them and answer with a value of the right shape. A write succeeds and changes nothing.
 - **routed to a hand-written handler that answers 501**: 0 methods whose route is claimed by a stateful family (VM `status/{action}`) but whose action is not modelled.
 
 For each method: **Access** is the permission rule from the schema (evaluated against `pve.grant`; root is always allowed), **Required** the parameters that must be sent (path parameters included), and **Errors** the names that `pve.fail(..., error=name)` accepts, from the [error catalogue](../errors.md). Errors marked "in the task" are raised in a PVE worker: the request succeeds and the task ends with the error.
@@ -2766,7 +2766,7 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
   - Access: any logged-in user
   - Required: `node` (+1 optional)
   - Errors: `configuration_file_does_not_exist`
-- **POST**: generic (from the schema), starts a task
+- **POST**: stateful (hand-written)
   - Access: any logged-in user
   - Required: `node`, `vmid` (+91 optional)
   - Errors: `permission_check_failed`, `parameter_verification_failed`, `pipe_requires_cli_environment`, `running`, `live_restore_only_compatible_backup`, `unknown_backup_archive_type`, `unable_use_volume_content_type`, `cannot_access_snippet_non_snippet`, `missing_privileges_access`, `only_root_can_pass_arbitrary`, `no_storage_id_specified_no`, `param_storage_storage_does_not`, `only_root_can_set_config`, `only_root_can_set_config_2`, `configuration_file_does_not_exist`, `protection_mode_enabled`, `live_restore_backup_provider_not`, `unable_create`, `got_unexpected_vtype`, `got_unexpected_backup_format`, `got_signal_abort`, `cannot_do_live_restore_template`, `no_storage_id_specified`, `storage_does_not_exist`, `can_t_find_file`, `unable_parse_format_import_volume`, `volume_unknown_import_format`, `volume_not_qemu_image_format`, `either_host_mapping_must_set`, `only_root_can_set_config_3`, `unable_find_configuration_file`, `unable_read_qemu_server_conf`, `found_no_device_mapping_information`, `seek_failed`, `error_couldn_t_determine_archive`, `cannot_pass_along_options_when`, `error_file_does_not_look`, `no_server_given`, `no_datastore_given`, `no_lock_found_trying_remove`, `found_lock_trying_remove_lock`, `invalid_json_data`
@@ -2774,7 +2774,7 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/qemu/{vmid}`
 
-- **DELETE**: generic (from the schema), starts a task
+- **DELETE**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Allocate
   - Required: `node`, `vmid` (+3 optional)
   - Errors: `param_skiplock_only_root_may`, `unable_remove_used_ha_resources`, `running_destroy_failed`, `configuration_file_does_not_exist`, `protection_mode_enabled`, `unable_find_configuration_file`
@@ -2949,7 +2949,7 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/qemu/{vmid}/clone`
 
-- **POST**: generic (from the schema), starts a task
+- **POST**: stateful (hand-written)
   - Access: (/vms/{vmid}: VM.Clone and (/vms/{newid}: VM.Allocate or /pool/{pool}: VM.Allocate))
   - Required: `newid`, `node`, `vmid` (+9 optional)
   - Errors: `param_storage_storage_does_not`, `can_t_clone_non_shared`, `unexpected_state_change`, `snapshot_does_not_exist`, `parameter_storage_not_allowed_linked`, `parameter_format_not_allowed_linked`, `can_t_clone_uses_local`, `unable_create_config_file_already`, `cannot_clone_tpm_state_while`, `unable_parse_drive_options`, `clone_failed`, `storage_disabled`, `configuration_file_does_not_exist`, `locked`, `only_root_can_set_config`, `either_host_mapping_must_set`, `only_root_can_set_config_2`, `unable_find_configuration_file`, `no_storage_id_specified`, `storage_does_not_exist`, `storage_not_available`
@@ -3209,11 +3209,11 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/qemu/{vmid}/snapshot`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Audit
   - Required: `node`, `vmid`
   - Errors: `configuration_file_does_not_exist`, `unable_find_configuration_file`
-- **POST**: generic (from the schema), starts a task
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Snapshot
   - Required: `node`, `snapname`, `vmid` (+2 optional)
   - Errors: `unable_use_snapshot_name_current`, `unable_use_snapshot_name_pending`, `configuration_file_does_not_exist`, `cannot_live_migrate_snapshot_ram`
@@ -3221,7 +3221,7 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/qemu/{vmid}/snapshot/{snapname}`
 
-- **DELETE**: generic (from the schema), starts a task
+- **DELETE**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Snapshot
   - Required: `node`, `snapname`, `vmid` (+1 optional)
   - Errors: `configuration_file_does_not_exist`, `top_most_snapshot_tpm_state`, `snapshot_does_not_exist`, `encountered_invalid_lock_expected`, `you_can_t_delete_snapshot`, `no_storage_id_specified`, `storage_does_not_exist`, `snapshot_needed_replication_job_run`, `too_many_unused_volumes_please`
@@ -3232,18 +3232,18 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/qemu/{vmid}/snapshot/{snapname}/config`
 
-- **GET**: generic (from the schema)
+- **GET**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Snapshot or VM.Snapshot.Rollback or VM.Audit
   - Required: `node`, `snapname`, `vmid`
   - Errors: `snapshot_does_not_exist`, `configuration_file_does_not_exist`
-- **PUT**: generic (from the schema)
+- **PUT**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Snapshot
   - Required: `node`, `snapname`, `vmid` (+1 optional)
   - Errors: `snapshot_does_not_exist`, `configuration_file_does_not_exist`, `locked`
 
 ### `/nodes/{node}/qemu/{vmid}/snapshot/{snapname}/rollback`
 
-- **POST**: generic (from the schema), starts a task
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Snapshot or VM.Snapshot.Rollback
   - Required: `node`, `snapname`, `vmid` (+1 optional)
   - Errors in the task: `you_can_t_rollback_if`, `snapshot_does_not_exist`, `unable_rollback_incomplete_snapshot_snapstate`, `unable_rollback_running`, `got_wrong_lock`, `configuration_file_does_not_exist`, `locked`, `too_many_unused_volumes_please`
@@ -3326,7 +3326,7 @@ Besides the listed names, these cross-cutting errors apply, whatever the catalog
 
 ### `/nodes/{node}/qemu/{vmid}/template`
 
-- **POST**: generic (from the schema), starts a task
+- **POST**: stateful (hand-written)
   - Access: /vms/{vmid}: VM.Allocate
   - Required: `node`, `vmid` (+1 optional)
   - Errors: `unable_create_template_because_contains`, `you_can_t_convert_template`, `you_can_t_convert_template_2`, `configuration_file_does_not_exist`, `locked`, `unable_find_configuration_file`

@@ -101,6 +101,7 @@ async def test_in_task_error_for_qemu_start(pve, api):
 
 
 async def test_http_error_by_name_and_one_shot(pve, api):
+    pve.add_vm(100, 'vm1')
     pve.fail('DELETE', '/nodes/pve1/qemu/100', error='running_destroy_failed', times=1)
     status, body = await api.call('DELETE', '/nodes/pve1/qemu/100')
     assert (status, body['message']) == (500, 'VM 100 is running - destroy failed\n')

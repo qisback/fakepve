@@ -43,13 +43,13 @@ async def test_same_data_as_json(pve, api):
 
 
 async def test_hand_written_error_is_a_200_with_the_status_in_the_body(pve, api):
-    pve.add_vm(100, 'vm1', status='running')
+    pve.add_vm(100, 'vm1')
     client = await ext(api)
-    status, body = await client.call('POST', VM + '/status/start')
+    status, body = await client.call('POST', VM + '/status/shutdown')
     assert status == 200
-    assert body == {'data': None, 'message': 'VM 100 already running\n', 'status': 500, 'success': 0}
+    assert body == {'data': None, 'message': 'VM 100 not running\n', 'status': 500, 'success': 0}
     # JSON keeps the real status for the same call.
-    assert (await api.call('POST', VM + '/status/start'))[0] == 500
+    assert (await api.call('POST', VM + '/status/shutdown'))[0] == 500
 
 
 async def test_validation_errors_carry_errors_and_the_400(pve, api):

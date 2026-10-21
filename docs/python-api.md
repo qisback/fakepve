@@ -93,6 +93,7 @@ fakecluster 9.0.10 9.0
 | `vm.template` | `True` for a template, which cannot be started. |
 | `vm.lock` | PVE's config lock (`backup`, `migrate`, `snapshot`, `clone`, `suspended`, ...): start, shutdown, reboot and config writes fail with `VM is locked (name)`. Use `pve.snapshot_lock` to set it and `pve.unlock` to clear it. |
 | `vm.pool` | The pool name, if any. |
+| `vm.snapshots` | Snapshot name to a dict: the config at the time plus `snaptime`, `description`, `parent` and `snapstate`. Made by `POST .../snapshot`; it is part of the config digest once it is not empty. |
 | `vm.stats` | Extra fields merged into `status/current`, overriding the defaults: `vm.stats['cpu'] = 0.95`. |
 | `vm.started_at` | When it started (`time.time()`), from which uptime is computed; `None` when stopped. |
 | `vm.nmis` | How many NMIs the `monitor` endpoint has sent it. |
@@ -631,6 +632,7 @@ Attributes after construction:
 | `template` | `False` |
 | `lock` | `None` |
 | `pool` | `None` |
+| `snapshots` | `{}` |
 | `stats` | `{}` |
 | `started_at` | `None` |
 | `nmis` | `0` |

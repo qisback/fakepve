@@ -91,10 +91,12 @@ async def test_power_task_fails_on_held_lock(pve, api):
 async def test_interrupted_snapshot_leaves_a_lock(pve, api):
     pve.add_vm(100, 'vm1')
     pve.snapshot_lock(100)
-    status, body = await api.call('POST', VM + '/status/start')
-    assert status == 500 and body['message'] == 'VM is locked (snapshot)\n'
+    # vm_start checks the lock inside its worker: the request succeeds and the task fails.
+    task = await wait_task(api, await api.data('POST', VM + '/status/start'))
+    assert task['exitstatus'] == 'VM is locked (snapshot)'
     pve.unlock(100)
-    await wait_task(api, await api.data('POST', VM + '/status/start'))
+    task = await wait_task(api, await api.data('POST', VM + '/status/start'))
+    assert task['exitstatus'] == 'OK'
 
 
 # -------------------------------------------------------------- the cluster
@@ -254,7 +256,7 @@ async def test_stale_digest_is_refused(pve, api):
     digest = (await api.data('GET', VM + '/config'))['digest']
     await api.data('PUT', VM + '/config', {'onboot': 1})
     status, body = await api.call('PUT', VM + '/config', {'onboot': 0, 'digest': digest})
-    assert status == 500 and 'detected modified configuration' in body['message']
+    assert status == 500 and body['message'] == 'checksum mismatch (file change by other user?)\n'
 
 
 async def test_boot_order_must_name_devices(pve, api):
@@ -266,10 +268,13 @@ async def test_boot_order_must_name_devices(pve, api):
 async def test_wrong_state_errors(pve, api):
     pve.add_vm(100, 'vm1', status='running')
     pve.add_vm(9000, 'tmpl', template=True)
-    status, body = await api.call('POST', VM + '/status/start')
-    assert body['message'] == 'VM 100 already running\n'
-    status, body = await api.call('POST', '/nodes/pve1/qemu/9000/status/start')
-    assert "can't start a vm if it's a template" in body['message']
+    # The start checks run in the worker: a UPID, and the task ends with the message.
+    task = await wait_task(api, await api.data('POST', VM + '/status/start'))
+    assert task['exitstatus'] == 'VM 100 already running'
+    task = await wait_task(api, await api.data('POST', '/nodes/pve1/qemu/9000/status/start'))
+    assert task['exitstatus'] == "you can't start a vm if it's a template"
+    status, body = await api.call('POST', '/nodes/pve1/qemu/9000/status/shutdown')
+    assert status == 500 and body['message'] == 'VM 9000 not running\n'
     status, body = await api.call('POST', VM + '/status/frobnicate')
     assert status == 501
 

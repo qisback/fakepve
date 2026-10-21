@@ -249,6 +249,7 @@ async def test_permissions_list_what_the_user_holds(pve, api):
 
 async def test_snapshots_and_their_config(pve, api):
     pve.add_vm(100, 'vm1')
+    await api.data('POST', '/nodes/pve1/qemu/100/snapshot', {'snapname': 'before', 'description': 'x'})
     snaps = await api.data('GET', '/nodes/pve1/qemu/100/snapshot')
     current = [s for s in snaps if s['name'] == 'current'][0]
     has(current, ('description', 'digest', 'running', 'parent'))

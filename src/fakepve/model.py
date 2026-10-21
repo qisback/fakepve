@@ -55,6 +55,8 @@ class FakeVm(object):
         # PVE's config lock value: backup, migrate, snapshot, clone, suspended, ...
         self.lock = lock
         self.pool = pool
+        # name -> a snapshot: the config at the time, with snaptime, description, parent and snapstate
+        self.snapshots = {}
         # Extra status/current fields: cpu, mem, maxmem, uptime, ha, ...
         self.stats = {}
         self.started_at = time.time() if status == 'running' else None
@@ -105,7 +107,8 @@ class FakeVm(object):
 
     def digest(self):
         """The config digest PVE's clients pass back to detect concurrent changes."""
-        return hashlib.sha1(json.dumps(self.config, sort_keys=True).encode()).hexdigest()
+        blob = [self.config, self.snapshots] if self.snapshots else self.config
+        return hashlib.sha1(json.dumps(blob, sort_keys=True).encode()).hexdigest()
 
     def devices(self, cfg=None):
         """Keys of the config that are devices (disks, nics, usb, pci)."""
